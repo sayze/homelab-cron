@@ -23,6 +23,8 @@ type testJob struct {
 func (j testJob) Name() string                  { return j.name }
 func (j testJob) Schedule() string              { return j.schedule }
 func (j testJob) Run(ctx context.Context) error { return j.run(ctx) }
+func (j testJob) AlertingEnabled() bool         { return false }
+func (j testJob) EmailContent() string          { return "" }
 
 func TestNew_InvalidSchedule(t *testing.T) {
 	_, err := New(testJob{name: "bad", schedule: "not-a-cron", run: func(context.Context) error { return nil }})

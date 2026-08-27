@@ -42,3 +42,7 @@ func (j AptUpgradeCheck) Run(context.Context) error {
 	}
 	return nil
 }
+
+func (AptUpgradeCheck) AlertingEnabled() bool { return false }
+
+func (AptUpgradeCheck) EmailContent() string { return "" }
