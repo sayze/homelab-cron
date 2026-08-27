@@ -56,10 +56,6 @@ type or registry beyond passing the job into `cron.New(...)` in
 - `heartbeat.go` — `Heartbeat`, runs every 15 minutes, just logs. No
   dependencies; exists as a smoke test that the scheduler is wired up and
   running.
-- `diskusage.go` — `DiskUsage`, runs hourly, `syscall.Statfs`s a directory
-  and logs free/total bytes. Takes that directory as a constructor arg
-  (`NewDiskUsage(dir string)`); `main.go` passes `cfg.HostRoot`. Worked
-  example of a job that reads host filesystem state.
 - `aptupgrade.go` — `AptUpgradeCheck`, runs every morning at 9am, checks
   that a file has been modified within the last week. Takes that file's
   path as a constructor arg (`NewAptUpgradeCheck(path string)`); `main.go`
@@ -67,9 +63,9 @@ type or registry beyond passing the job into `cron.New(...)` in
   host's real apt upgrade log — apt only writes to it when a package
   upgrade actually runs, so a missing or stale file means unattended
   upgrades have stopped running. Logs a warning in that case; otherwise
-  silent. Worked example of a job that monitors host logs — copy this one
-  for jobs that need to read/tail/scan files under the host mount, not
-  `diskusage.go`.
+  silent. Worked example of a job that reads host filesystem state — copy
+  this one for jobs that need to read/tail/scan files under the host
+  mount.
 
 ## Host filesystem access
 
@@ -103,9 +99,8 @@ filesystem, not the host's.
 ## Adding a new job
 
 1. Add a new file in `internal/jobs/` implementing `cron.Job` (`Name`,
-   `Schedule`, `Run`) — `aptupgrade.go` or `diskusage.go` are the closest
-   templates if the job reads host filesystem state, `heartbeat.go`
-   otherwise.
+   `Schedule`, `Run`) — `aptupgrade.go` is the closest template if the job
+   reads host filesystem state, `heartbeat.go` otherwise.
 2. Register it in `cmd/api/main.go`'s `cron.New(...)` call.
 3. If it needs a new env var (a secret, an external endpoint, etc.), add it
    to `internal/config/config.go`, `.env.example`, and the `env`/`template`
