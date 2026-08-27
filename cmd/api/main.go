@@ -22,7 +22,7 @@ func main() {
 	scheduler, err := cron.New(
 		jobs.NewHeartbeat(),
 		jobs.NewDiskUsage(cfg.HostRoot),
-		jobs.NewLogSummary(filepath.Join(cfg.HostRoot, "var/log")),
+		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
 	)
 	if err != nil {
 		log.Fatalf("failed to build scheduler: %v", err)
