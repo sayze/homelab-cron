@@ -58,12 +58,6 @@ single package or test with `make unit path=internal/cron` or
 
 ## Jobs
 
-- `heartbeat` — logs every 15 minutes. No dependencies; a smoke test that
-  the scheduler is wired up and running.
-- `disk-usage` — logs free/total space on the host filesystem, hourly.
-- `log-summary` — logs file count + total size under the host's `/var/log`,
-  every 5 minutes.
-
 See [CLAUDE.md](./CLAUDE.md) for how to add a new one.
 
 ## Host filesystem access
