@@ -89,14 +89,18 @@ type or registry beyond passing the job into `cron.New(...)` in
   running.
 - `aptupgrade.go` — `AptUpgradeCheck`, runs every morning at 9am, checks
   that a file has been modified within the last week. Takes that file's
-  path as a constructor arg (`NewAptUpgradeCheck(path string)`); `main.go`
-  passes `filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")`, i.e. the
-  host's real apt upgrade log — apt only writes to it when a package
-  upgrade actually runs, so a missing or stale file means unattended
-  upgrades have stopped running. Logs a warning in that case; otherwise
-  silent. Worked example of a job that reads host filesystem state — copy
-  this one for jobs that need to read/tail/scan files under the host
-  mount.
+  path as a constructor arg (`NewAptUpgradeCheck(path string) *AptUpgradeCheck`);
+  `main.go` passes `filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")`,
+  i.e. the host's real apt upgrade log — apt only writes to it when a
+  package upgrade actually runs, so a missing or stale file means
+  unattended upgrades have stopped running. Logs a warning in that case;
+  otherwise silent. `AlertingEnabled` is always `true`; `Run` stores the
+  warning (if any) on the struct behind a mutex, and `EmailContent`
+  returns it — empty after a healthy run, so the scheduler only actually
+  emails when there's something to report. Worked example of a job that
+  reads host filesystem state *and* uses per-run alerting state — copy
+  this one for jobs that need to read/tail/scan files under the host mount
+  or conditionally alert.
 
 ## Host filesystem access
 
