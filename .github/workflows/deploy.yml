@@ -59,4 +59,9 @@ jobs:
         env:
           NOMAD_ADDR: ${{ vars.NOMAD_ADDR }}
           NOMAD_TOKEN: ${{ secrets.NOMAD_CI_TOKEN }}
-        run: nomad job run -detach -var="image=sayze/homelab-cron:sha-${GITHUB_SHA::7}" homelab-cron.nomad.hcl
+        run: |
+          nomad job run -detach \
+            -var="image=sayze/homelab-cron:sha-${GITHUB_SHA::7}" \
+            -var="alert_email_from=${{ vars.ALERT_EMAIL_FROM }}" \
+            -var="alert_email_to=${{ vars.ALERT_EMAIL_TO }}" \
+            homelab-cron.nomad.hcl

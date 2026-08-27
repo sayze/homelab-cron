@@ -177,12 +177,21 @@ For local dev, `docker-compose.yml` builds and runs the same image; copy
 `/health` — no Traefik tags, so it's never exposed publicly (Traefik's
 `exposedByDefault=false`, and nothing here opts in). CI (`.github/workflows/
 deploy.yml`) builds/pushes `sayze/homelab-cron` on push to `master`, then
-runs `nomad job run -var="image=sayze/homelab-cron:sha-<short-sha>"
-homelab-cron.nomad.hcl` against the homelab's Nomad cluster — same shape as
-`qotd-api`'s deploy workflow. Requires `REGISTRY_USER`/`NOMAD_ADDR`
-(variables) and `REGISTRY_TOKEN`/`NOMAD_CI_TOKEN` (secrets) configured as
-repo (or org) config before it will run successfully — the workflow
-doesn't scope these to a GitHub Environment.
+runs `nomad job run` against the homelab's Nomad cluster, passing
+`-var="image=sayze/homelab-cron:sha-<short-sha>"` plus
+`-var="alert_email_from=..."` and `-var="alert_email_to=..."` sourced
+from the `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` repo variables (not
+secrets — these are non-sensitive identifiers; the actual AWS credentials
+come from Vault via `homelab-cron.nomad.hcl`'s `template` block, not CI).
+`aws_region` is deliberately left unpassed so it keeps the Nomad file's
+own `us-east-1` default rather than being overridden with an empty string
+if the repo variable were ever unset — override it directly in the Nomad
+file (or via a manual `-var`) if you need a different region — same shape
+as `qotd-api`'s deploy workflow. Requires `REGISTRY_USER`/`NOMAD_ADDR`/
+`ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` (variables) and
+`REGISTRY_TOKEN`/`NOMAD_CI_TOKEN` (secrets) configured as repo (or org)
+config before it will run successfully — the workflow doesn't scope these
+to a GitHub Environment.
 
 See **Host filesystem access** above — unlike `postgres-data` in the
 `homelab` repo, this job's host mount needs no ansible/Nomad `host_volume`
