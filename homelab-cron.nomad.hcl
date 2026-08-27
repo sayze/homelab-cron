@@ -39,11 +39,7 @@ job "homelab-cron" {
         image = var.image
         ports = ["http"]
 
-        # Read-only bind mount of the entire host filesystem, same pattern
-        # as jobs/newrelic.nomad.hcl. rslave propagates new host mounts
-        # (e.g. a USB drive) into the container without a restart. This
-        # service never writes to the host — :ro is load-bearing, not
-        # incidental.
+        # Read-only bind mount of the entire host filesystem.
         volumes = [
           "/:/host:ro,rslave",
         ]
