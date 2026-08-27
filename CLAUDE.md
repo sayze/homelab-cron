@@ -60,12 +60,15 @@ type or registry beyond passing the job into `cron.New(...)` in
   and logs free/total bytes. Takes that directory as a constructor arg
   (`NewDiskUsage(dir string)`); `main.go` passes `cfg.HostRoot`. Worked
   example of a job that reads host filesystem state.
-- `logsummary.go` — `LogSummary`, runs every 5 minutes, walks a directory
-  and logs file count + total size. Takes that directory as a constructor
-  arg (`NewLogSummary(dir string)`); `main.go` passes
-  `filepath.Join(cfg.HostRoot, "var/log")`, i.e. the host's real
-  `/var/log`. Worked example of a job that monitors host logs — copy this
-  one for jobs that need to read/tail/scan files under the host mount, not
+- `aptupgrade.go` — `AptUpgradeCheck`, runs every morning at 9am, checks
+  that a file has been modified within the last week. Takes that file's
+  path as a constructor arg (`NewAptUpgradeCheck(path string)`); `main.go`
+  passes `filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")`, i.e. the
+  host's real apt upgrade log — apt only writes to it when a package
+  upgrade actually runs, so a missing or stale file means unattended
+  upgrades have stopped running. Logs a warning in that case; otherwise
+  silent. Worked example of a job that monitors host logs — copy this one
+  for jobs that need to read/tail/scan files under the host mount, not
   `diskusage.go`.
 
 ## Host filesystem access
@@ -92,14 +95,15 @@ infra agent:
   to the container.
 
 Jobs needing to look at some host path should build it off `cfg.HostRoot`
-(e.g. `filepath.Join(cfg.HostRoot, "var/log")` — see `logsummary.go`)
-rather than hardcoding an absolute path, since a bare `/var/log` inside the
-container refers to the container's own (empty) filesystem, not the host's.
+(e.g. `filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")` — see
+`aptupgrade.go`) rather than hardcoding an absolute path, since a bare
+`/var/log` inside the container refers to the container's own (empty)
+filesystem, not the host's.
 
 ## Adding a new job
 
 1. Add a new file in `internal/jobs/` implementing `cron.Job` (`Name`,
-   `Schedule`, `Run`) — `logsummary.go` or `diskusage.go` are the closest
+   `Schedule`, `Run`) — `aptupgrade.go` or `diskusage.go` are the closest
    templates if the job reads host filesystem state, `heartbeat.go`
    otherwise.
 2. Register it in `cmd/api/main.go`'s `cron.New(...)` call.
