@@ -18,4 +18,12 @@ type Job interface {
 	// Run executes one occurrence of the job. It should return promptly
 	// after ctx is cancelled so the scheduler can shut down without delay.
 	Run(ctx context.Context) error
+
+	// AlertingEnabled reports whether this job's results should be emailed
+	// after a run. Jobs that don't send alerts should always return false.
+	AlertingEnabled() bool
+
+	// EmailContent returns the markdown body to send when AlertingEnabled
+	// is true. Undefined/unused when AlertingEnabled returns false.
+	EmailContent() string
 }

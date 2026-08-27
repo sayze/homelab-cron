@@ -36,6 +36,12 @@ process, not in response to HTTP requests.
     dom month dow), e.g. `"0 * * * *"` for hourly.
   - `Run(ctx context.Context) error` — executes one occurrence. Should
     return promptly once `ctx` is cancelled.
+  - `AlertingEnabled() bool` — whether this job's results should be emailed
+    after a run. All jobs currently return `false`; nothing yet consumes
+    this — it's the first increment of email alerting, added ahead of a
+    scheduler change that will actually send mail.
+  - `EmailContent() string` — the markdown body to send when
+    `AlertingEnabled` is true. Unused while every job returns `false`.
 - `scheduler.go` — `Scheduler`, a thin wrapper around
   `github.com/robfig/cron/v3`. `New(jobs ...Job)` registers each job's
   `Schedule()` via `AddFunc`, returning an error if any expression is

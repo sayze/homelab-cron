@@ -24,3 +24,7 @@ func (Heartbeat) Run(context.Context) error {
 	log.Println("heartbeat: still alive")
 	return nil
 }
+
+func (Heartbeat) AlertingEnabled() bool { return false }
+
+func (Heartbeat) EmailContent() string { return "" }
