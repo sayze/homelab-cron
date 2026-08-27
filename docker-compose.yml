@@ -8,5 +8,10 @@ services:
     environment:
       ADDR: ":8080"
       HOST_ROOT: ${HOST_ROOT:-/host}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-}
     volumes:
       - ${HOST_ROOT_HOST_PATH:-/}:${HOST_ROOT:-/host}:ro

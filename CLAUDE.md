@@ -21,8 +21,11 @@ process, not in response to HTTP requests.
   and blocks until it returns — so a job mid-read of the host filesystem
   gets a chance to notice cancellation and finish cleanly before the
   process exits.
-- `internal/config/config.go` — env var loading (`ADDR`, `HOST_ROOT`), plain
-  `os.Getenv` with defaults, no third-party config library.
+- `internal/config/config.go` — env var loading (`ADDR`, `HOST_ROOT`,
+  `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`), plain `os.Getenv`/`os.Getenv` +
+  comma-split with defaults, no third-party config library. Deliberately
+  does *not* read AWS credentials/region — those go straight to the AWS
+  SDK's own env chain (see `internal/mailer`).
 - `internal/server/server.go` — chi router. Middleware: chi's default stack
   (`RequestID`, `Logger`, `Recoverer`). One route: `GET /health` → `200
   {"status":"ok"}`. No CORS, no auth — nothing here is meant to be called by
@@ -37,20 +40,42 @@ process, not in response to HTTP requests.
   - `Run(ctx context.Context) error` — executes one occurrence. Should
     return promptly once `ctx` is cancelled.
   - `AlertingEnabled() bool` — whether this job's results should be emailed
-    after a run. All jobs currently return `false`; nothing yet consumes
-    this — it's the first increment of email alerting, added ahead of a
-    scheduler change that will actually send mail.
+    after a run. All jobs currently return `false`.
   - `EmailContent() string` — the markdown body to send when
-    `AlertingEnabled` is true. Unused while every job returns `false`.
+    `AlertingEnabled` is true. Sent as the plain-text body of the alert
+    email — not rendered to HTML.
 - `scheduler.go` — `Scheduler`, a thin wrapper around
-  `github.com/robfig/cron/v3`. `New(jobs ...Job)` registers each job's
-  `Schedule()` via `AddFunc`, returning an error if any expression is
-  invalid (fails fast at startup, not at the job's next scheduled run).
-  `Start()` is non-blocking. `Stop()` cancels a context shared by all
-  in-flight job runs, then blocks until robfig/cron confirms none are still
-  running. Each run is wrapped in `runJob`, which logs start/finish/duration
-  and recovers a panic so one broken job can't take the process down or
-  block other jobs' future runs.
+  `github.com/robfig/cron/v3`. `New(m mailer.Mailer, jobs ...Job)` registers
+  each job's `Schedule()` via `AddFunc`, returning an error if any
+  expression is invalid (fails fast at startup, not at the job's next
+  scheduled run). `Start()` is non-blocking. `Stop()` cancels a context
+  shared by all in-flight job runs, then blocks until robfig/cron confirms
+  none are still running. Each run is wrapped in `runJob`, which logs
+  start/finish/duration, recovers a panic so one broken job can't take the
+  process down or block other jobs' future runs, and — once `Run` returns,
+  success or not — sends the job's alert email via `m` if
+  `AlertingEnabled()` is true and `EmailContent()` is non-empty. The send
+  uses its own 10s timeout independent of the job's (shutdown-cancellable)
+  ctx, so a job cancelled by `Stop()` still gets a chance to alert.
+
+### Email alerting (`internal/mailer/`)
+
+AWS SES is the only provider (no SMS, no other provider — see the email
+alerting spec this was built against). `Mailer` is a one-method interface
+(`Send(ctx, subject, body string) error`); `scheduler.go` is the only
+caller, driven by each job's `AlertingEnabled`/`EmailContent`.
+
+- `ses.go` — `SES`, wraps `github.com/aws/aws-sdk-go-v2/service/sesv2`.
+  `NewSES(ctx, from, to)` calls `awsconfig.LoadDefaultConfig(ctx)`, so AWS
+  credentials and region (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  `AWS_SESSION_TOKEN`, `AWS_REGION`) come from the SDK's own default env
+  chain — this package never reads or stores them itself, per the spec
+  requirement that credentials/identifiers be propagated through env vars.
+  `from`/`to` are this service's own `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`.
+  `from` must be an SES-verified sender address.
+- `noop.go` — `Noop`, logs instead of sending. `main.go` wires this in when
+  `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` aren't both set, so alerting jobs
+  don't error out in local dev without AWS credentials.
 
 ### Jobs (`internal/jobs/`)
 
@@ -118,6 +143,15 @@ filesystem, not the host's.
 - `ADDR` — listen address for the `/health` server. Defaults to `:8080`.
 - `HOST_ROOT` — path where the host's root filesystem is mounted
   read-only. Defaults to `/host`.
+- `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` — sender and (comma-separated)
+  recipient addresses for job alert emails. Both optional; if either is
+  unset, `main.go` wires up `mailer.Noop` instead of `mailer.SES` and
+  alerting jobs just log. `ALERT_EMAIL_FROM` must be an SES-verified
+  sender address.
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` — required
+  if the above are set. Standard AWS SDK env vars, read directly by
+  `aws-sdk-go-v2`'s default config chain, not by this repo's own
+  `internal/config`.
 
 ## Docker
 
@@ -143,12 +177,21 @@ For local dev, `docker-compose.yml` builds and runs the same image; copy
 `/health` — no Traefik tags, so it's never exposed publicly (Traefik's
 `exposedByDefault=false`, and nothing here opts in). CI (`.github/workflows/
 deploy.yml`) builds/pushes `sayze/homelab-cron` on push to `master`, then
-runs `nomad job run -var="image=sayze/homelab-cron:sha-<short-sha>"
-homelab-cron.nomad.hcl` against the homelab's Nomad cluster — same shape as
-`qotd-api`'s deploy workflow. Requires `REGISTRY_USER`/`NOMAD_ADDR`
-(variables) and `REGISTRY_TOKEN`/`NOMAD_CI_TOKEN` (secrets) configured as
-repo (or org) config before it will run successfully — the workflow
-doesn't scope these to a GitHub Environment.
+runs `nomad job run` against the homelab's Nomad cluster, passing
+`-var="image=sayze/homelab-cron:sha-<short-sha>"` plus
+`-var="alert_email_from=..."` and `-var="alert_email_to=..."` sourced
+from the `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` repo variables (not
+secrets — these are non-sensitive identifiers; the actual AWS credentials
+come from Vault via `homelab-cron.nomad.hcl`'s `template` block, not CI).
+`aws_region` is deliberately left unpassed so it keeps the Nomad file's
+own `us-east-1` default rather than being overridden with an empty string
+if the repo variable were ever unset — override it directly in the Nomad
+file (or via a manual `-var`) if you need a different region — same shape
+as `qotd-api`'s deploy workflow. Requires `REGISTRY_USER`/`NOMAD_ADDR`/
+`ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` (variables) and
+`REGISTRY_TOKEN`/`NOMAD_CI_TOKEN` (secrets) configured as repo (or org)
+config before it will run successfully — the workflow doesn't scope these
+to a GitHub Environment.
 
 See **Host filesystem access** above — unlike `postgres-data` in the
 `homelab` repo, this job's host mount needs no ansible/Nomad `host_volume`
