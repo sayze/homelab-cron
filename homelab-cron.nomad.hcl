@@ -42,7 +42,7 @@ job "homelab-cron" {
         type     = "http"
         path     = "/health"
         port     = "http"
-        interval = "30s"
+        interval = "60s"
         timeout  = "5s"
       }
     }
