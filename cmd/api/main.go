@@ -27,7 +27,6 @@ func main() {
 
 	scheduler, err := cron.New(
 		m,
-		jobs.NewHeartbeat(),
 		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
 	)
 	if err != nil {

@@ -84,9 +84,6 @@ existing one as the starting point for a new job — there's no shared base
 type or registry beyond passing the job into `cron.New(...)` in
 `cmd/api/main.go`.
 
-- `heartbeat.go` — `Heartbeat`, runs every 15 minutes, just logs. No
-  dependencies; exists as a smoke test that the scheduler is wired up and
-  running.
 - `aptupgrade.go` — `AptUpgradeCheck`, runs every morning at 9am, checks
   that a file has been modified within the last week. Takes that file's
   path as a constructor arg (`NewAptUpgradeCheck(path string) *AptUpgradeCheck`);
@@ -134,8 +131,8 @@ filesystem, not the host's.
 ## Adding a new job
 
 1. Add a new file in `internal/jobs/` implementing `cron.Job` (`Name`,
-   `Schedule`, `Run`) — `aptupgrade.go` is the closest template if the job
-   reads host filesystem state, `heartbeat.go` otherwise.
+   `Schedule`, `Run`) — `aptupgrade.go` is the closest template, especially
+   if the job reads host filesystem state.
 2. Register it in `cmd/api/main.go`'s `cron.New(...)` call.
 3. If it needs a new env var (a secret, an external endpoint, etc.), add it
    to `internal/config/config.go`, `.env.example`, and the `env`/`template`
