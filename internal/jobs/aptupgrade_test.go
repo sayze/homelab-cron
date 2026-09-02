@@ -13,41 +13,62 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAptUpgradeCheck_Run_Fresh(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "upgrade.log")
-	assert.NoError(t, os.WriteFile(path, nil, 0o644))
+func TestAptUpgradeCheck_Run(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(t *testing.T) string // returns the log path to check
+		wantContent   bool
+		wantPathInMsg bool
+	}{
+		{
+			name: "fresh log",
+			setup: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "upgrade.log")
+				require.NoError(t, os.WriteFile(path, nil, 0o644))
+				return path
+			},
+			wantContent: false,
+		},
+		{
+			name: "stale log",
+			setup: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "upgrade.log")
+				require.NoError(t, os.WriteFile(path, nil, 0o644))
+				stale := time.Now().Add(-8 * 24 * time.Hour)
+				require.NoError(t, os.Chtimes(path, stale, stale))
+				return path
+			},
+			wantContent:   true,
+			wantPathInMsg: true,
+		},
+		{
+			name: "missing log",
+			setup: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "does-not-exist.log")
+			},
+			wantContent: true,
+		},
+	}
 
-	job := NewAptUpgradeCheck(path)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := tt.setup(t)
+			job := NewAptUpgradeCheck(path)
 
-	err := job.Run(context.Background())
+			err := job.Run(context.Background())
 
-	assert.NoError(t, err)
-	assert.True(t, job.AlertingEnabled())
-	assert.Empty(t, job.EmailContent())
-}
-
-func TestAptUpgradeCheck_Run_Stale(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "upgrade.log")
-	assert.NoError(t, os.WriteFile(path, nil, 0o644))
-	stale := time.Now().Add(-8 * 24 * time.Hour)
-	assert.NoError(t, os.Chtimes(path, stale, stale))
-
-	job := NewAptUpgradeCheck(path)
-
-	err := job.Run(context.Background())
-
-	assert.NoError(t, err)
-	assert.NotEmpty(t, job.EmailContent())
-	assert.Contains(t, job.EmailContent(), path)
-}
-
-func TestAptUpgradeCheck_Run_Missing(t *testing.T) {
-	job := NewAptUpgradeCheck(filepath.Join(t.TempDir(), "does-not-exist.log"))
-
-	err := job.Run(context.Background())
-
-	assert.NoError(t, err)
-	assert.NotEmpty(t, job.EmailContent())
+			assert.NoError(t, err)
+			assert.True(t, job.AlertingEnabled())
+			if tt.wantContent {
+				assert.NotEmpty(t, job.EmailContent())
+			} else {
+				assert.Empty(t, job.EmailContent())
+			}
+			if tt.wantPathInMsg {
+				assert.Contains(t, job.EmailContent(), path)
+			}
+		})
+	}
 }
 
 func TestAptUpgradeCheck_Run_ClearsPreviousAlert(t *testing.T) {

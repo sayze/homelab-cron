@@ -51,17 +51,32 @@ func (m *recordingMailer) Send(_ context.Context, subject, body string) error {
 	return m.sendErr
 }
 
-func TestNew_InvalidSchedule(t *testing.T) {
-	_, err := New(mailer.Noop{}, testJob{name: "bad", schedule: "not-a-cron", run: func(context.Context) error { return nil }})
-	assert.Error(t, err)
-}
+func noopRun(context.Context) error { return nil }
 
-func TestNew_ValidSchedule_StartStop(t *testing.T) {
-	s, err := New(mailer.Noop{}, testJob{name: "ok", schedule: "0 0 1 1 *", run: func(context.Context) error { return nil }})
-	require.NoError(t, err)
+func TestNew(t *testing.T) {
+	tests := []struct {
+		name     string
+		schedule string
+		wantErr  bool
+	}{
+		{"invalid schedule", "not-a-cron", true},
+		{"valid schedule", "0 0 1 1 *", false},
+	}
 
-	s.Start()
-	s.Stop() // must return promptly; no job is running yet
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := New(mailer.Noop{}, testJob{name: "job", schedule: tt.schedule, run: noopRun})
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			s.Start()
+			s.Stop() // must return promptly; no job is running yet
+		})
+	}
 }
 
 func TestRunJob_RecoversPanic(t *testing.T) {
@@ -90,51 +105,40 @@ func TestRunJob_PassesContextThrough(t *testing.T) {
 	assert.True(t, sawCancel.Load())
 }
 
-func TestRunJob_SendsAlertWhenEnabled(t *testing.T) {
-	m := &recordingMailer{}
-	j := testJob{
-		name:         "alerting-job",
-		alerting:     true,
-		emailContent: "something happened",
-		run:          func(context.Context) error { return nil },
+func TestRunJob_Alerting(t *testing.T) {
+	tests := []struct {
+		name         string
+		alerting     bool
+		emailContent string
+		runErr       error
+		wantSent     bool
+	}{
+		{"sends alert when enabled", true, "something happened", nil, true},
+		{"sends alert on job error", true, "it broke", assert.AnError, true},
+		{"no alert when disabled", false, "", nil, false},
+		{"no alert when email content empty", true, "", nil, false},
 	}
 
-	runJob(context.Background(), m, j)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &recordingMailer{}
+			j := testJob{
+				name:         "job-under-test",
+				alerting:     tt.alerting,
+				emailContent: tt.emailContent,
+				run:          func(context.Context) error { return tt.runErr },
+			}
 
-	require.Len(t, m.sent, 1)
-	assert.Contains(t, m.sent[0].subject, j.name)
-	assert.Equal(t, j.emailContent, m.sent[0].body)
-}
+			runJob(context.Background(), m, j)
 
-func TestRunJob_SendsAlertOnJobError(t *testing.T) {
-	m := &recordingMailer{}
-	j := testJob{
-		name:         "failing-alerting-job",
-		alerting:     true,
-		emailContent: "it broke",
-		run:          func(context.Context) error { return assert.AnError },
+			if !tt.wantSent {
+				assert.Empty(t, m.sent)
+				return
+			}
+
+			require.Len(t, m.sent, 1)
+			assert.Contains(t, m.sent[0].subject, j.name)
+			assert.Equal(t, tt.emailContent, m.sent[0].body)
+		})
 	}
-
-	runJob(context.Background(), m, j)
-
-	require.Len(t, m.sent, 1)
-	assert.Equal(t, "it broke", m.sent[0].body)
-}
-
-func TestRunJob_NoAlertWhenDisabled(t *testing.T) {
-	m := &recordingMailer{}
-	j := testJob{name: "quiet-job", run: func(context.Context) error { return nil }}
-
-	runJob(context.Background(), m, j)
-
-	assert.Empty(t, m.sent)
-}
-
-func TestRunJob_NoAlertWhenEmailContentEmpty(t *testing.T) {
-	m := &recordingMailer{}
-	j := testJob{name: "empty-content-job", alerting: true, run: func(context.Context) error { return nil }}
-
-	runJob(context.Background(), m, j)
-
-	assert.Empty(t, m.sent)
 }
