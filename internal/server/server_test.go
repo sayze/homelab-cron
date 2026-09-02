@@ -10,27 +10,33 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNew_HealthCheck(t *testing.T) {
-	srv := New()
+func TestNew(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus int
+		wantBody   string // JSON-compared when non-empty
+	}{
+		{"health check", "/health", http.StatusOK, `{"status": "ok"}`},
+		{"root not routed", "/", http.StatusNotFound, ""},
+		{"status not routed", "/status", http.StatusNotFound, ""},
+		{"metrics not routed", "/metrics", http.StatusNotFound, ""},
+		{"jobs not routed", "/jobs", http.StatusNotFound, ""},
+	}
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := New()
 
-	srv.ServeHTTP(rec, req)
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.JSONEq(t, `{"status": "ok"}`, rec.Body.String())
-}
+			srv.ServeHTTP(rec, req)
 
-func TestNew_NoRoutesOutsideHealth(t *testing.T) {
-	srv := New()
-
-	for _, path := range []string{"/", "/status", "/metrics", "/jobs"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		rec := httptest.NewRecorder()
-
-		srv.ServeHTTP(rec, req)
-
-		assert.Equalf(t, http.StatusNotFound, rec.Code, "path %q should not be routed", path)
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			if tt.wantBody != "" {
+				assert.JSONEq(t, tt.wantBody, rec.Body.String())
+			}
+		})
 	}
 }
