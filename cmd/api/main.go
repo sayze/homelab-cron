@@ -36,8 +36,9 @@ func main() {
 	defer scheduler.Stop()
 
 	srv := &http.Server{
-		Addr:    cfg.Addr,
-		Handler: server.New(),
+		Addr:              cfg.Addr,
+		Handler:           server.New(),
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

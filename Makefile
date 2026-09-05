@@ -26,3 +26,6 @@ clean-build:
 
 fmt:
 	gofumpt -w .
+
+lint:
+	golangci-lint run ./...
