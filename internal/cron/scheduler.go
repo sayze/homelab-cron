@@ -32,7 +32,6 @@ func New(m mailer.Mailer, jobs ...Job) (*Scheduler, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	for _, j := range jobs {
-		j := j
 		if _, err := c.AddFunc(j.Schedule(), func() { runJob(ctx, m, j) }); err != nil {
 			cancel()
 			return nil, fmt.Errorf("register job %q: %w", j.Name(), err)
