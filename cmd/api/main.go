@@ -1,3 +1,5 @@
+// Command api is the entrypoint for homelab-cron: it schedules and runs
+// the service's cron jobs and serves a health check for Nomad/Consul.
 package main
 
 import (

@@ -1,3 +1,5 @@
+// Package config loads homelab-cron's configuration from environment
+// variables.
 package config
 
 import (
@@ -5,6 +7,8 @@ import (
 	"strings"
 )
 
+// Config holds homelab-cron's runtime configuration, loaded from
+// environment variables by Load.
 type Config struct {
 	// Addr is the listen address for the /health HTTP server.
 	Addr string
@@ -29,6 +33,8 @@ type Config struct {
 	AlertEmailTo   []string
 }
 
+// Load reads homelab-cron's configuration from environment variables,
+// applying defaults for anything unset.
 func Load() Config {
 	return Config{
 		Addr:           getEnv("ADDR", ":8080"),

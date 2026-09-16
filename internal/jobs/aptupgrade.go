@@ -1,3 +1,4 @@
+// Package jobs contains homelab-cron's cron.Job implementations.
 package jobs
 
 import (
@@ -25,15 +26,20 @@ type AptUpgradeCheck struct {
 	message string
 }
 
+// NewAptUpgradeCheck builds an AptUpgradeCheck for the given file path,
+// warning if that file hasn't been modified within the last week.
 func NewAptUpgradeCheck(path string) *AptUpgradeCheck {
 	return &AptUpgradeCheck{path: path, maxAge: 7 * 24 * time.Hour}
 }
 
+// Name identifies this job in logs.
 func (*AptUpgradeCheck) Name() string { return "apt-upgrade-check" }
 
-// Schedule: every morning at 9am.
+// Schedule runs every morning at 9am.
 func (*AptUpgradeCheck) Schedule() string { return "0 9 * * *" }
 
+// Run checks the age of the configured file and records a warning message
+// if it's missing or stale.
 func (j *AptUpgradeCheck) Run(context.Context) error {
 	info, err := os.Stat(j.path)
 	if os.IsNotExist(err) {
@@ -63,6 +69,7 @@ func (j *AptUpgradeCheck) setMessage(msg string) {
 	j.message = msg
 }
 
+// AlertingEnabled is always true for this job.
 func (*AptUpgradeCheck) AlertingEnabled() bool { return true }
 
 // EmailContent returns the warning from the most recent Run, or "" if that
