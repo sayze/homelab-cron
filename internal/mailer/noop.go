@@ -10,6 +10,7 @@ import (
 // without AWS credentials — so alerting jobs still run without error.
 type Noop struct{}
 
+// Send logs the email instead of sending it.
 func (Noop) Send(_ context.Context, subject, body string) error {
 	log.Printf("mailer: alerting not configured, dropping email %q (%d bytes)", subject, len(body))
 	return nil

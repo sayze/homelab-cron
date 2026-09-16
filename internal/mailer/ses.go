@@ -37,6 +37,7 @@ func NewSES(ctx context.Context, from string, to []string) (*SES, error) {
 	}, nil
 }
 
+// Send emails subject/body to the configured recipients via SES.
 func (s *SES) Send(ctx context.Context, subject, body string) error {
 	_, err := s.client.SendEmail(ctx, &sesv2.SendEmailInput{
 		FromEmailAddress: aws.String(s.from),
