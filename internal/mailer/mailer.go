@@ -6,8 +6,8 @@ package mailer
 
 import "context"
 
-// Mailer sends a single alert email for a completed job run.
-type Mailer interface {
+// Sender sends a single alert email for a completed job run.
+type Sender interface {
 	// Send delivers an email with the given subject and plain-text body.
 	Send(ctx context.Context, subject, body string) error
 }
