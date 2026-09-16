@@ -3,11 +3,20 @@ version: "2"
 linters:
   default: standard
   enable:
-    - bodyclose
-    - gosec
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gocritic
     - misspell
-    - unconvert
-    - unparam
+    - revive
+    - bodyclose
+    - nilerr
+    - nilnil
+    - errorlint
+  exclusions:
+    generated: lax
 
 formatters:
   enable:
