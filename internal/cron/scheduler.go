@@ -27,7 +27,7 @@ type Scheduler struct {
 // used to send the alert email for any job whose AlertingEnabled() returns
 // true after it runs. It returns an error if any job's Schedule() is not a
 // valid cron expression. Call Start to begin running jobs.
-func New(m mailer.Mailer, jobs ...Job) (*Scheduler, error) {
+func New(m mailer.Sender, jobs ...Job) (*Scheduler, error) {
 	c := robfigcron.New()
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -57,7 +57,7 @@ func (s *Scheduler) Stop() {
 // one broken job can't take down the scheduler. If j.AlertingEnabled(), it
 // sends j.EmailContent() as an alert email via m once Run returns,
 // regardless of whether Run succeeded.
-func runJob(ctx context.Context, m mailer.Mailer, j Job) {
+func runJob(ctx context.Context, m mailer.Sender, j Job) {
 	start := time.Now()
 	log.Printf("cron: %s starting", j.Name())
 
@@ -80,7 +80,7 @@ func runJob(ctx context.Context, m mailer.Mailer, j Job) {
 // sendAlert sends j's alert email if it has one to send. It runs on its
 // own bounded timeout rather than the job's ctx, so a job cancelled by
 // Stop() still gets a chance to alert.
-func sendAlert(m mailer.Mailer, j Job) {
+func sendAlert(m mailer.Sender, j Job) {
 	if !j.AlertingEnabled() {
 		return
 	}

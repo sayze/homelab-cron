@@ -67,7 +67,7 @@ func main() {
 // ALERT_EMAIL_FROM/ALERT_EMAIL_TO aren't both set, alerting isn't
 // configured and it returns a mailer.Noop that logs instead of sending —
 // this keeps local dev (no AWS credentials) working without error.
-func newMailer(cfg config.Config) (mailer.Mailer, error) {
+func newMailer(cfg config.Config) (mailer.Sender, error) {
 	if cfg.AlertEmailFrom == "" || len(cfg.AlertEmailTo) == 0 {
 		log.Println("mailer: ALERT_EMAIL_FROM/ALERT_EMAIL_TO not set, alert emails will only be logged")
 		return mailer.Noop{}, nil
