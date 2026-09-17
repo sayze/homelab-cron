@@ -182,6 +182,25 @@ func TestConsulCurrent(t *testing.T) {
 	})
 }
 
+func TestConsulAgentVersion(t *testing.T) {
+	t.Run("returns consul's own agent version", func(t *testing.T) {
+		client := fakeConsulClient{agentSelfKey: {version: "1.22.2"}}
+
+		got, err := consulAgentVersion(client)(context.Background())
+
+		assert.NoError(t, err)
+		assert.Equal(t, "1.22.2", got)
+	})
+
+	t.Run("propagates a consul error", func(t *testing.T) {
+		client := fakeConsulClient{agentSelfKey: {err: errors.New("boom")}}
+
+		_, err := consulAgentVersion(client)(context.Background())
+
+		assert.ErrorContains(t, err, "boom")
+	})
+}
+
 func TestVaultCurrent(t *testing.T) {
 	t.Run("returns the version vault reports for itself", func(t *testing.T) {
 		client := fakeVaultClient{version: "1.21.4"}
@@ -222,6 +241,10 @@ func fakeCurrent(version string, err error) func(context.Context) (string, error
 	}
 }
 
+// agentSelfKey is the fakeConsulClient key used for AgentVersion, which
+// (unlike Version) isn't keyed by a service name.
+const agentSelfKey = "self"
+
 // fakeConsulClient is a consul.Client fake keyed by service name, used to
 // test consulCurrent without a real Consul server.
 type fakeConsulClient map[string]struct {
@@ -233,6 +256,14 @@ func (f fakeConsulClient) Version(_ context.Context, service string) (string, er
 	entry, ok := f[service]
 	if !ok {
 		return "", errors.New("fakeConsulClient: no entry for " + service)
+	}
+	return entry.version, entry.err
+}
+
+func (f fakeConsulClient) AgentVersion(_ context.Context) (string, error) {
+	entry, ok := f[agentSelfKey]
+	if !ok {
+		return "", errors.New("fakeConsulClient: no entry for agent self")
 	}
 	return entry.version, entry.err
 }

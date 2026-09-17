@@ -135,6 +135,80 @@ func TestHTTPClient_Version_GivesUpAfterMaxAttempts(t *testing.T) {
 	assert.EqualValues(t, maxAttempts, requests.Load())
 }
 
+func TestHTTPClient_AgentVersion(t *testing.T) {
+	tests := []struct {
+		name        string
+		respStatus  int
+		respBody    any
+		wantVersion string
+		wantErr     string
+	}{
+		{
+			name:        "agent self with config version",
+			respStatus:  http.StatusOK,
+			respBody:    map[string]any{"Config": map[string]any{"Version": "1.22.2"}},
+			wantVersion: "1.22.2",
+		},
+		{
+			name:       "config missing version",
+			respStatus: http.StatusOK,
+			respBody:   map[string]any{"Config": map[string]any{}},
+			wantErr:    "agent self response has no Config.Version",
+		},
+		{
+			name:       "non-200 status",
+			respStatus: http.StatusInternalServerError,
+			respBody:   nil,
+			wantErr:    "unexpected status 500",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/v1/agent/self", r.URL.Path)
+				w.WriteHeader(tt.respStatus)
+				if tt.respBody != nil {
+					require.NoError(t, json.NewEncoder(w).Encode(tt.respBody))
+				}
+			}))
+			defer srv.Close()
+
+			client := NewHTTPClient(srv.URL, srv.Client())
+
+			version, err := client.AgentVersion(context.Background())
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantVersion, version)
+		})
+	}
+}
+
+func TestHTTPClient_AgentVersion_RetriesOnFailure(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) < maxAttempts {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Config": map[string]any{"Version": "1.22.2"}}))
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, srv.Client())
+
+	version, err := client.AgentVersion(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "1.22.2", version)
+	assert.EqualValues(t, maxAttempts, requests.Load())
+}
+
 func TestNewHTTPClient_TrimsTrailingSlash(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

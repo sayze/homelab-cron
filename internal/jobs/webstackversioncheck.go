@@ -52,9 +52,9 @@ func NewWebstackVersionCheck(consulClient consul.Client, vaultClient vault.Clien
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
 		{
-			name:           "Consul",
-			currentVersion: "1.22.2",
-			fetchLatest:    hashiCorpLatest(client, "consul"),
+			name:         "Consul",
+			fetchCurrent: consulAgentVersion(consulClient),
+			fetchLatest:  hashiCorpLatest(client, "consul"),
 		},
 		{
 			name:         "Vault",
@@ -171,6 +171,15 @@ func (j *WebstackVersionCheck) EmailContent() string {
 func consulCurrent(consulClient consul.Client, service string) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		return consulClient.Version(ctx, service)
+	}
+}
+
+// consulAgentVersion returns a fetchCurrent func that reads Consul's own
+// deployed version live from its /v1/agent/self endpoint, via
+// consulClient — see internal/consul.
+func consulAgentVersion(consulClient consul.Client) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		return consulClient.AgentVersion(ctx)
 	}
 }
 
