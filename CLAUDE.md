@@ -141,13 +141,14 @@ type or registry beyond passing the job into `cron.New(...)` in
   the plan `homelab`'s `UPGRADE.md`/README Hygiene section describes for
   sourcing baselines live instead of hand-maintaining them — extend the
   same pattern to Vault/Nomad/Docker if/when their jobs register equivalent
-  meta. This still doesn't reach Consul/Vault/Nomad's own local APIs or the
-  Docker daemon directly (this service isn't on the host network), and
+  meta. This still doesn't reach the Docker daemon directly, and
   latest-version checks still go out over public HTTPS to upstream
   endpoints — the reason the Dockerfile carries `ca-certificates` into the
-  `scratch` image — but the Consul HTTP API itself (`CONSUL_ADDR`) must be
-  reachable from this container's own network for the Consul-backed
-  dependencies to resolve; see `internal/consul` and `homelab-cron.nomad.hcl`.
+  `scratch` image — but the task runs on the host network (see
+  `homelab-cron.nomad.hcl`'s `network { mode = "host" }`, the same pattern
+  `jobs/traefik.nomad.hcl` in `homelab` uses), so the Consul HTTP API
+  resolves at `127.0.0.1:8500`, Consul's own local-agent address, same as
+  `internal/config`'s own default; see `internal/consul`.
   Worked example of injecting fetch behavior for both the current version
   (`dependency.fetchCurrent`) and the latest version
   (`dependency.fetchLatest`) for testability, instead of hitting real APIs
@@ -209,12 +210,13 @@ filesystem, not the host's.
   `internal/config`.
 - `CONSUL_ADDR` — Consul's HTTP API base URL, used by
   `internal/consul.HTTPClient` (see above). `internal/config`'s own default
-  is `http://127.0.0.1:8500` (Consul's default local-agent address, fine
-  for local dev where Consul typically runs on the same host as `go run`
-  or `docker compose`). In production, `homelab-cron.nomad.hcl` always sets
-  this explicitly via its `consul_addr` variable, since this task isn't on
-  the host network and can't reach `127.0.0.1:8500` — see that file for
-  how it resolves the right address per allocation.
+  is `http://127.0.0.1:8500` (Consul's default local-agent address). This
+  default is left unset in production too: `homelab-cron.nomad.hcl` puts
+  the task on the host network (`network { mode = "host" }`, same pattern as
+  `homelab`'s `jobs/traefik.nomad.hcl`), so `127.0.0.1:8500` already reaches
+  the placement node's own Consul agent directly — no per-allocation
+  address resolution needed. Override only for local dev if Consul isn't
+  reachable at that default (e.g. a remote dev Consul).
 
 ## Docker
 

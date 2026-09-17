@@ -18,13 +18,6 @@ variable "aws_region" {
   default = "us-east-1"
 }
 
-variable "consul_addr" {
-  type = string
-  # Not on the host network, so resolve the placement node's own IP instead
-  # of 127.0.0.1 — Consul listens on all interfaces on every Nomad client.
-  default = "http://${attr.unique.network.ip-address}:8500"
-}
-
 job "homelab-cron" {
   datacenters = ["hl"]
   type        = "service"
@@ -32,9 +25,12 @@ job "homelab-cron" {
   group "homelab-cron" {
     count = 1
 
+    # Host networking so this task can reach local agents/components directly
     network {
+      mode = "host"
+
       port "http" {
-        to = 8080
+        static = 8080
       }
     }
 
@@ -62,8 +58,8 @@ job "homelab-cron" {
       }
 
       config {
-        image = var.image
-        ports = ["http"]
+        image        = var.image
+        network_mode = "host"
 
         # Read-only bind mount of the entire host filesystem.
         volumes = [
@@ -79,12 +75,10 @@ job "homelab-cron" {
         ALERT_EMAIL_TO   = var.alert_email_to
         AWS_REGION       = var.aws_region
 
-        # Consul's HTTP API address, used by internal/consul.HTTPClient to
-        # read Traefik/PostgreSQL/New Relic Infrastructure's deployed
-        # version from Consul service meta — see var.consul_addr's default
-        # above for why this resolves per allocation instead of being a
-        # fixed address.
-        CONSUL_ADDR = var.consul_addr
+        # CONSUL_ADDR is deliberately unset here: on the host network,
+        # internal/config's own default (http://127.0.0.1:8500, Consul's
+        # local agent) already resolves correctly, same as traefik.nomad.hcl's
+        # --providers.consulcatalog.endpoint.address.
       }
 
       # AWS SES credentials for job alert emails (internal/mailer). Read
