@@ -34,11 +34,7 @@ concrete job, so jobs are added by writing a new type in `internal/jobs/`
 and registering it in `main.go` — nothing else needs to change. Each job
 also declares whether it wants alerting (`AlertingEnabled`/`EmailContent`);
 the scheduler emails the result via `internal/mailer` after every run when
-enabled. `internal/consul`, `internal/vault`, `internal/nomad`, and
-`internal/docker` are one-method clients that
-`internal/jobs.WebstackVersionCheck` uses to read dependencies'
-actually-deployed versions live instead of a hand-maintained baseline. See
-[CLAUDE.md](./CLAUDE.md) for the full design rationale.
+enabled. See [CLAUDE.md](./CLAUDE.md) for the full design rationale.
 
 ## Running locally
 
