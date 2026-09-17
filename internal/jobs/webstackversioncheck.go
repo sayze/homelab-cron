@@ -46,12 +46,6 @@ type WebstackVersionCheck struct {
 // Engine), each image's own GitHub releases (Traefik, New Relic
 // Infrastructure), and postgresql.org's published version list (PostgreSQL,
 // whose Docker tag is just the bare major version).
-//
-// consulClient reads each dependency's actually-deployed version live from
-// Consul service meta where the corresponding Nomad job registers one
-// (Traefik, PostgreSQL, New Relic Infrastructure — see
-// jobs/{traefik,postgres,newrelic}.nomad.hcl in homelab), rather than the
-// hand-maintained pinned baselines the other dependencies still use.
 func NewWebstackVersionCheck(consulClient consul.Client) *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
@@ -143,9 +137,7 @@ func (j *WebstackVersionCheck) EmailContent() string {
 
 // consulCurrent returns a fetchCurrent func that reads service's
 // actually-deployed version live from Consul, via consulClient — see
-// internal/consul — rather than a hand-maintained pinned baseline. Used for
-// dependencies whose Nomad job registers its image tag as "version" in
-// Consul service meta.
+// internal/consul
 func consulCurrent(consulClient consul.Client, service string) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		return consulClient.Version(ctx, service)

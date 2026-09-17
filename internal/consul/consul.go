@@ -1,9 +1,6 @@
 // Package consul is a minimal read-only client for Consul's HTTP catalog
 // API. internal/jobs.WebstackVersionCheck uses it to read a cluster
-// service's actually-deployed version from Consul service meta, instead of
-// a hand-maintained pinned baseline — see homelab's
-// jobs/{traefik,newrelic,postgres}.nomad.hcl, which register their image
-// tag as a "version" key in Consul service meta for exactly this purpose.
+// service's actually-deployed version from Consul service meta.
 package consul
 
 import (
@@ -13,7 +10,15 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
+
+// maxAttempts and retryDelay bound Version's retries against transient
+// Consul/network failures: up to 3 attempts, 1s apart. retryDelay is a var
+// so tests can shrink it.
+const maxAttempts = 3
+
+var retryDelay = time.Second
 
 // Client reads a Consul-registered service's deployed version. HTTPClient
 // is the concrete implementation, backed by Consul's HTTP API; tests fake
@@ -49,8 +54,27 @@ type serviceHealthEntry struct {
 
 // Version implements Client by querying Consul's health endpoint for
 // service's passing instances and reading "version" off the first one's
-// meta.
+// meta, retrying up to maxAttempts times on failure.
 func (c *HTTPClient) Version(ctx context.Context, service string) (string, error) {
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		var version string
+		if version, err = c.version(ctx, service); err == nil {
+			return version, nil
+		}
+		if attempt == maxAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(retryDelay):
+		}
+	}
+	return "", fmt.Errorf("consul: query service %q failed after %d attempts: %w", service, maxAttempts, err)
+}
+
+func (c *HTTPClient) version(ctx context.Context, service string) (string, error) {
 	url := fmt.Sprintf("%s/v1/health/service/%s?passing=true", c.addr, service)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

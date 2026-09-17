@@ -85,8 +85,9 @@ dependency's actually-deployed version live instead of a hand-maintained
 baseline (see the `webstackversioncheck.go` entry below). `HTTPClient` is
 the concrete implementation, backed by Consul's HTTP health API
 (`GET /v1/health/service/{name}?passing=true`); it reads the `version` key
-off the first passing instance's `Service.Meta` and errors if there's no
-passing instance or no `version` meta. `NewHTTPClient(addr, client)` takes
+off the first passing instance's `Service.Meta`, retrying up to 3 times
+(1s apart) on failure, and errors if there's no passing instance or no
+`version` meta. `NewHTTPClient(addr, client)` takes
 Consul's HTTP API base URL — `main.go` passes `cfg.ConsulAddr`
 (env var `CONSUL_ADDR`) — and an `*http.Client`, same shape as the plain
 `*http.Client` injection `webstackversioncheck.go`'s own `fetchLatest`

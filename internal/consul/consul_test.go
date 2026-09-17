@@ -7,11 +7,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	retryDelay = time.Millisecond
+}
 
 func TestHTTPClient_Version(t *testing.T) {
 	tests := []struct {
@@ -88,6 +94,45 @@ func TestHTTPClient_Version(t *testing.T) {
 			assert.Equal(t, tt.wantVersion, version)
 		})
 	}
+}
+
+func TestHTTPClient_Version_RetriesOnFailure(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) < maxAttempts {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		require.NoError(t, json.NewEncoder(w).Encode([]map[string]any{
+			{"Service": map[string]any{"Meta": map[string]string{"version": "3.6.1"}}},
+		}))
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, srv.Client())
+
+	version, err := client.Version(context.Background(), "traefik")
+
+	require.NoError(t, err)
+	assert.Equal(t, "3.6.1", version)
+	assert.EqualValues(t, maxAttempts, requests.Load())
+}
+
+func TestHTTPClient_Version_GivesUpAfterMaxAttempts(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, srv.Client())
+
+	_, err := client.Version(context.Background(), "traefik")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed after 3 attempts")
+	assert.EqualValues(t, maxAttempts, requests.Load())
 }
 
 func TestNewHTTPClient_TrimsTrailingSlash(t *testing.T) {

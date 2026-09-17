@@ -20,16 +20,8 @@ variable "aws_region" {
 
 variable "consul_addr" {
   type = string
-  # This task isn't on the host network (see the group's `network` block
-  # below), so it can't reach the local Consul agent via 127.0.0.1.
-  # ${attr.unique.network.ip-address} is a Nomad runtime variable resolved
-  # per allocation to the placement node's own network IP — Consul runs as
-  # an agent on every Nomad client in this cluster (see homelab's
-  # provisioning/ansible/playbooks/provision.yml) and listens on all
-  # interfaces (consul_client_addr: "0.0.0.0"), so this reaches whichever
-  # node the allocation actually lands on. UFW's "Lan" profile
-  # (provisioning/ansible/roles/network) already permits this from the
-  # container's bridge subnet.
+  # Not on the host network, so resolve the placement node's own IP instead
+  # of 127.0.0.1 — Consul listens on all interfaces on every Nomad client.
   default = "http://${attr.unique.network.ip-address}:8500"
 }
 

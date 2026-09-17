@@ -32,12 +32,6 @@ type Config struct {
 	AlertEmailFrom string
 	AlertEmailTo   []string
 
-	// ConsulAddr is Consul's HTTP API base URL, used by
-	// internal/consul.HTTPClient to read a service's deployed version from
-	// Consul service meta (see internal/jobs.WebstackVersionCheck). Defaults
-	// to Consul's own default HTTP API address; override for a Consul
-	// server/agent reachable from this container over the network, since
-	// this service isn't on the host network — see homelab-cron.nomad.hcl.
 	ConsulAddr string
 }
 
