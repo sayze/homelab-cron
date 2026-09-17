@@ -12,38 +12,18 @@ import (
 	"time"
 )
 
-// dependency is one component of the homelab stack this job tracks: the
-// version currently pinned in the homelab repo, and how to fetch the latest
-// stable upstream release to compare it against. For Consul/Vault/Nomad
-// this is NOT simply each role's defaults/main.yml — homelab's
-// provisioning/ansible/playbooks/provision.yml has its own vars: block
-// that overrides vault_version/nomad_version (Ansible playbook vars beat
-// role defaults), so those two must be read from provision.yml, not their
-// role defaults (which are stale — see homelab's UPGRADE.md's Hygiene
-// section). Docker and the containerised services (Traefik, PostgreSQL,
-// New Relic Infrastructure) aren't affected by that override; their
-// current versions come from the docker role's defaults/main.yml and
-// jobs/*.nomad.hcl's image tags respectively.
+// dependency is one component of the homelab stack this job tracks: its
+// pinned version and how to fetch the latest stable release to compare it
+// against.
 type dependency struct {
 	name           string
 	currentVersion string
 	fetchLatest    func(ctx context.Context) (string, error)
 }
 
-// WebstackVersionCheck compares the versions of Consul, Vault, Nomad,
-// Docker, Traefik, PostgreSQL, and New Relic Infrastructure pinned in the
-// homelab repo against each project's latest stable release, and alerts
-// when any has fallen a major version behind. The pinned versions below are
-// a hand-maintained snapshot — update them whenever homelab's
-// provision.yml (Vault/Nomad), the docker role's defaults (Docker), or
-// jobs/*.nomad.hcl's image tags (Traefik/PostgreSQL/New Relic) change (see
-// homelab's UPGRADE.md and its README's TODO/Hygiene section for the plan
-// to source these live instead).
-//
-// This never touches the actually-running stack: homelab-cron isn't on the
-// host network and can't reach Consul/Vault/Nomad's local APIs (or the
-// Docker daemon) from inside its container, so this only compares
-// hardcoded baselines against public upstream version endpoints.
+// WebstackVersionCheck compares pinned versions of the homelab stack
+// against each project's latest stable release and alerts when any has
+// fallen a major version behind.
 type WebstackVersionCheck struct {
 	deps []dependency
 
