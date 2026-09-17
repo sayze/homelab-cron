@@ -100,15 +100,12 @@ repo variables/secrets.
   itself a failure — Vault's status varies with seal/standby state, but
   the body is always populated). What's left is Consul, Nomad, and Docker,
   which still use a hardcoded baseline:
-  - Done: this job's Nomad task now uses host networking
-    (`homelab-cron.nomad.hcl`'s `network` block has `mode = "host"`,
-    same as `jobs/traefik.nomad.hcl`/`jobs/newrelic.nomad.hcl`), so it can
-    already reach `127.0.0.1:8500`/`8200`/`4646` — the blocker for the
-    bullet below is gone.
   - Consul (`GET /v1/agent/self`, `Config.Version`) is unauthenticated on
-    this stack (no Consul ACLs), so it's straightforward now that host
-    networking is in place — same pattern as Vault's fix above, just not
-    yet implemented.
+    this stack (no Consul ACLs), and this job's Nomad task is already on
+    the host network (`homelab-cron.nomad.hcl`'s `network` block has
+    `mode = "host"`, same as `jobs/traefik.nomad.hcl`/`jobs/newrelic.nomad.hcl`),
+    so it can reach `127.0.0.1:8500` directly — same pattern as Vault's
+    fix above, just not yet implemented.
   - Nomad has ACLs enabled (`acl.enabled = true` in `nomad.hcl.j2`), so
     its `/v1/agent/self` needs a token. Would need a new read-only Nomad
     ACL policy/token provisioned via `homelab`'s Ansible (same pattern as
