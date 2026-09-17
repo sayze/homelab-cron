@@ -22,12 +22,21 @@ internal/config            env var configuration
 internal/server              chi router (GET /health only)
 internal/cron                  the Job interface + Scheduler
 internal/jobs                    concrete cron.Job implementations
+internal/mailer                  alert email delivery (AWS SES, or a Noop in local dev)
+internal/consul                  reads live dependency versions from Consul
+internal/vault                   reads Vault's own live version
+internal/docker                  reads the local Docker daemon's own live version
 ```
 
 `cron.Scheduler` depends only on the `cron.Job` interface, not on any
 concrete job, so jobs are added by writing a new type in `internal/jobs/`
-and registering it in `main.go` — nothing else needs to change. See
-[CLAUDE.md](./CLAUDE.md) for the full design rationale.
+and registering it in `main.go` — nothing else needs to change. Each job
+also declares whether it wants alerting (`AlertingEnabled`/`EmailContent`);
+the scheduler emails the result via `internal/mailer` after every run when
+enabled. `internal/consul`, `internal/vault`, and `internal/docker` are
+one-method clients that `internal/jobs.WebstackVersionCheck` uses to read
+dependencies' actually-deployed versions live instead of a hand-maintained
+baseline. See [CLAUDE.md](./CLAUDE.md) for the full design rationale.
 
 ## Running locally
 
@@ -44,6 +53,23 @@ docker compose up --build
 ```
 
 The API listens on `:8080` by default (`ADDR` env var).
+
+## Configuration
+
+All env vars are optional with working local-dev defaults except AWS
+credentials, which are only required once alerting is turned on. See
+`.env.example` and [CLAUDE.md](./CLAUDE.md) for the full list and
+rationale:
+
+| Var | Default | Purpose |
+| --- | --- | --- |
+| `ADDR` | `:8080` | `/health` listen address |
+| `HOST_ROOT` | `/host` | read-only host filesystem mount, for jobs like `AptUpgradeCheck` |
+| `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` | unset | alert email sender/recipients; unset means `mailer.Noop` (log-only) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | — | required if the above are set; read by the AWS SDK's own env chain, not this repo's config |
+| `CONSUL_ADDR` | `http://127.0.0.1:8500` | Consul HTTP API, for live dependency versions |
+| `VAULT_ADDR` | `http://127.0.0.1:8200` | Vault HTTP API, for Vault's own live version |
+| `DOCKER_SOCK` | `/var/run/docker.sock` | Docker Engine API Unix socket, for the daemon's own live version |
 
 ## Testing
 
@@ -81,35 +107,13 @@ repo variables/secrets.
 
 ### Hygiene
 
-- **Source `webstack-version-check`'s current versions from the live
-  stack instead of a hardcoded list.** `internal/jobs/webstackversioncheck.go`
-  compares hand-maintained version strings against upstream latest-release
-  APIs — nothing here actually asks Consul, Vault, or Nomad what version
-  they're running, so the baseline silently goes stale unless someone
-  remembers to update it by hand alongside `homelab`. This already bit
-  once: Vault/Nomad's versions are pinned by an override in `homelab`'s
-  `provisioning/ansible/playbooks/provision.yml`, not their role defaults,
-  and an earlier pass here copied the (stale) role defaults instead — see
-  `homelab`'s `UPGRADE.md`. Traefik, PostgreSQL, and New Relic
-  Infrastructure are already fixed: their `homelab` Nomad jobs register
-  their image tag as `version` Consul service meta, and
-  `internal/consul.Client` reads it live (see `CLAUDE.md`). Consul and
-  Vault are now fixed too, each via its own live endpoint rather than
-  Consul service meta: `consulAgentVersion` reads Consul's own
-  `GET /v1/agent/self`'s `Config.Version` directly, since Consul's own
-  version isn't service meta on itself; `internal/vault.Client.Version`
-  reads `version` off Vault's own unauthenticated `GET /v1/sys/health`
-  response body (a non-200 status there isn't itself a failure — Vault's
-  status varies with seal/standby state, but the body is always
-  populated). What's left is Nomad and Docker, which still use a
-  hardcoded baseline:
-  - Nomad has ACLs enabled (`acl.enabled = true` in `nomad.hcl.j2`), so
-    its `/v1/agent/self` needs a token. Would need a new read-only Nomad
-    ACL policy/token provisioned via `homelab`'s Ansible (same pattern as
-    the existing `ci-deploy` token in `provisioning/ansible/vars/defaults.yml`),
-    delivered to this service as a Vault-templated secret like the AWS SES
-    credentials already are.
-  - Docker has no such HTTP API without mounting `/var/run/docker.sock`
-    (as `jobs/newrelic.nomad.hcl` does) and calling the Engine API's
-    `/version` — broader access than this service currently needs, so
-    worth weighing separately.
+- **Source `webstack-version-check`'s Nomad baseline from the live stack
+  instead of a hardcoded version.** Nomad is the one dependency in
+  `internal/jobs/webstackversioncheck.go` still using a hand-maintained
+  pinned baseline (`dependency.currentVersion`) rather than reading its
+  current version live. Doing so needs a token: Nomad has ACLs enabled
+  (`acl.enabled = true` in `nomad.hcl.j2`), so its `/v1/agent/self` needs
+  a read-only ACL policy/token provisioned via `homelab`'s Ansible (same
+  pattern as the existing `ci-deploy` token in
+  `provisioning/ansible/vars/defaults.yml`), delivered to this service as
+  a Vault-templated secret like the AWS SES credentials already are.
