@@ -25,6 +25,7 @@ internal/jobs                    concrete cron.Job implementations
 internal/mailer                  alert email delivery (AWS SES, or a Noop in local dev)
 internal/consul                  reads live dependency versions from Consul
 internal/vault                   reads Vault's own live version
+internal/nomad                   reads Nomad's own live version
 internal/docker                  reads the local Docker daemon's own live version
 ```
 
@@ -33,10 +34,11 @@ concrete job, so jobs are added by writing a new type in `internal/jobs/`
 and registering it in `main.go` — nothing else needs to change. Each job
 also declares whether it wants alerting (`AlertingEnabled`/`EmailContent`);
 the scheduler emails the result via `internal/mailer` after every run when
-enabled. `internal/consul`, `internal/vault`, and `internal/docker` are
-one-method clients that `internal/jobs.WebstackVersionCheck` uses to read
-dependencies' actually-deployed versions live instead of a hand-maintained
-baseline. See [CLAUDE.md](./CLAUDE.md) for the full design rationale.
+enabled. `internal/consul`, `internal/vault`, `internal/nomad`, and
+`internal/docker` are one-method clients that
+`internal/jobs.WebstackVersionCheck` uses to read dependencies'
+actually-deployed versions live instead of a hand-maintained baseline. See
+[CLAUDE.md](./CLAUDE.md) for the full design rationale.
 
 ## Running locally
 
@@ -69,6 +71,8 @@ rationale:
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | — | required if the above are set; read by the AWS SDK's own env chain, not this repo's config |
 | `CONSUL_ADDR` | `http://127.0.0.1:8500` | Consul HTTP API, for live dependency versions |
 | `VAULT_ADDR` | `http://127.0.0.1:8200` | Vault HTTP API, for Vault's own live version |
+| `NOMAD_ADDR` | `http://127.0.0.1:4646` | Nomad HTTP API, for Nomad's own live version |
+| `NOMAD_TOKEN` | unset | ACL token for `NOMAD_ADDR`, required once Nomad's ACLs are enabled; a secret, rendered from Vault in production |
 | `DOCKER_SOCK` | `/var/run/docker.sock` | Docker Engine API Unix socket, for the daemon's own live version |
 
 ## Testing
@@ -102,18 +106,3 @@ tags, so it's never exposed publicly. CI (`.github/workflows/deploy.yml`)
 builds/pushes the image on push to `master`, then runs the Nomad job
 against the homelab cluster. See [CLAUDE.md](./CLAUDE.md) for the required
 repo variables/secrets.
-
-## TODO
-
-### Hygiene
-
-- **Source `webstack-version-check`'s Nomad baseline from the live stack
-  instead of a hardcoded version.** Nomad is the one dependency in
-  `internal/jobs/webstackversioncheck.go` still using a hand-maintained
-  pinned baseline (`dependency.currentVersion`) rather than reading its
-  current version live. Doing so needs a token: Nomad has ACLs enabled
-  (`acl.enabled = true` in `nomad.hcl.j2`), so its `/v1/agent/self` needs
-  a read-only ACL policy/token provisioned via `homelab`'s Ansible (same
-  pattern as the existing `ci-deploy` token in
-  `provisioning/ansible/vars/defaults.yml`), delivered to this service as
-  a Vault-templated secret like the AWS SES credentials already are.

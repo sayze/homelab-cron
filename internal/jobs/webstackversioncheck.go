@@ -13,6 +13,7 @@ import (
 
 	"homelab-cron/internal/consul"
 	"homelab-cron/internal/docker"
+	"homelab-cron/internal/nomad"
 	"homelab-cron/internal/vault"
 )
 
@@ -27,7 +28,8 @@ type dependency struct {
 	// version live use fetchCurrent instead, so the baseline can't drift
 	// out of sync with what's actually running — see consulCurrent (via
 	// Consul service meta), vaultCurrent (via Vault's own health endpoint),
-	// and dockerCurrent (via the local Docker daemon's own Engine API).
+	// nomadCurrent (via Nomad's own agent-self endpoint), and dockerCurrent
+	// (via the local Docker daemon's own Engine API).
 	currentVersion string
 	fetchCurrent   func(ctx context.Context) (string, error)
 
@@ -52,6 +54,7 @@ type WebstackVersionCheck struct {
 func NewWebstackVersionCheck(
 	consulClient consul.Client,
 	vaultClient vault.Client,
+	nomadClient nomad.Client,
 	dockerClient docker.Client,
 ) *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -67,9 +70,9 @@ func NewWebstackVersionCheck(
 			fetchLatest:  hashiCorpLatest(client, "vault"),
 		},
 		{
-			name:           "Nomad",
-			currentVersion: "1.11.3",
-			fetchLatest:    hashiCorpLatest(client, "nomad"),
+			name:         "Nomad",
+			fetchCurrent: nomadCurrent(nomadClient),
+			fetchLatest:  hashiCorpLatest(client, "nomad"),
 		},
 		{
 			name:         "Docker",
@@ -194,6 +197,15 @@ func consulAgentVersion(consulClient consul.Client) func(context.Context) (strin
 func vaultCurrent(vaultClient vault.Client) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		return vaultClient.Version(ctx)
+	}
+}
+
+// nomadCurrent returns a fetchCurrent func that reads Nomad's own deployed
+// version live from its agent-self endpoint, via nomadClient — see
+// internal/nomad.
+func nomadCurrent(nomadClient nomad.Client) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		return nomadClient.Version(ctx)
 	}
 }
 

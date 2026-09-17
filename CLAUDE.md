@@ -111,6 +111,24 @@ URL — `main.go` passes `cfg.VaultAddr` (env var `VAULT_ADDR`) — and an
 `*http.Client`, same shape as `internal/consul.NewHTTPClient`. Tests fake
 the `Client` interface directly rather than standing up a Vault server.
 
+### Nomad client (`internal/nomad/`)
+
+`Client` is a one-method interface (`Version(ctx) (string, error)`), read
+by `internal/jobs.WebstackVersionCheck` to look up Nomad's own
+actually-deployed version live instead of a hand-maintained baseline (see
+the `webstackversioncheck.go` entry below). `HTTPClient` is the concrete
+implementation, backed by Nomad's own agent-self endpoint (`GET
+/v1/agent/self`); it reads the `version` key off the response body's
+`stats.nomad` map, retrying up to 3 times (1s apart) on failure — same
+retry shape as `internal/consul` and `internal/vault`. Unlike those two's
+equivalent endpoints, Nomad's requires an ACL token once ACLs are
+enabled — `NewHTTPClient(addr, token, client)` takes Nomad's HTTP API base
+URL (`main.go` passes `cfg.NomadAddr`, env var `NOMAD_ADDR`), an ACL token
+(`cfg.NomadToken`, env var `NOMAD_TOKEN` — see **Required env vars** below
+for how it reaches the task from Vault), and an `*http.Client`; every
+request carries the token as Nomad's `X-Nomad-Token` header. Tests fake the
+`Client` interface directly rather than standing up a Nomad agent.
+
 ### Docker client (`internal/docker/`)
 
 `Client` is a one-method interface (`Version(ctx) (string, error)`), read
@@ -159,45 +177,42 @@ type or registry beyond passing the job into `cron.New(...)` in
   project's own GitHub releases (Docker via moby/moby, Traefik, New Relic
   Infrastructure), and postgresql.org's published version list (PostgreSQL
   — its Docker tag is just the bare major version, e.g. `postgres:16`).
-  Each `dependency`'s *current* version comes from one of three places.
-  Nomad alone still uses a hand-maintained pinned baseline
-  (`dependency.currentVersion`, set in `NewWebstackVersionCheck`) — update
-  it whenever `homelab` changes, from
-  `provisioning/ansible/playbooks/provision.yml`'s `vars:` block
-  specifically, **not** `provisioning/ansible/roles/nomad/defaults/main.yml`
-  (that role default is stale and overridden by the playbook — see
-  `homelab`'s `UPGRADE.md`). Traefik, PostgreSQL, and New Relic
-  Infrastructure read their current version *live* from Consul service meta
-  (`dependency.fetchCurrent`, built by `consulCurrent` — see
-  `internal/consul`), since their Nomad jobs
+  Each `dependency`'s *current* version comes from one of two places now
+  that Nomad has joined Consul/Vault/Docker in reading its own live —
+  there's no hand-maintained pinned baseline left in this job at all.
+  Traefik, PostgreSQL, and New Relic Infrastructure read their current
+  version *live* from Consul service meta (`dependency.fetchCurrent`, built
+  by `consulCurrent` — see `internal/consul`), since their Nomad jobs
   (`jobs/{traefik,postgres,newrelic}.nomad.hcl` in `homelab`) register their
-  image tag as `version` in Consul service meta. Consul, Vault, and Docker
-  instead read their own current version live from their own endpoints, not
-  through Consul service meta: `consulAgentVersion` (`internal/consul`)
-  hits Consul's own `GET /v1/agent/self` and reads `Config.Version` off it
-  directly; `vaultCurrent` (`internal/vault`) hits Vault's own
-  unauthenticated `GET /v1/sys/health` and reads `version` off the
-  response body directly — Vault's health endpoint responds with a
+  image tag as `version` in Consul service meta. Consul, Vault, Nomad, and
+  Docker instead read their own current version live from their own
+  endpoints, not through Consul service meta: `consulAgentVersion`
+  (`internal/consul`) hits Consul's own `GET /v1/agent/self` and reads
+  `Config.Version` off it directly; `vaultCurrent` (`internal/vault`) hits
+  Vault's own unauthenticated `GET /v1/sys/health` and reads `version` off
+  the response body directly — Vault's health endpoint responds with a
   non-200 status depending on seal/standby state (e.g. 503 sealed, 429
   standby), but the body is populated regardless, so
   `internal/vault.HTTPClient` doesn't treat a non-200 status itself as a
-  failure; `dockerCurrent` (`internal/docker`) hits the local Docker
-  daemon's own Engine API `GET /version` over its Unix socket and reads
-  `Version` off the response body directly. This is the pattern
-  `homelab`'s `UPGRADE.md`/README Hygiene section describes for sourcing
-  baselines live instead of hand-maintaining them — Nomad is the one
-  dependency left to extend it to next. Latest-version checks still go out
-  over public HTTPS to upstream endpoints — the reason the Dockerfile
-  carries `ca-certificates` into the `scratch` image — but the task runs on
-  the host network (see `homelab-cron.nomad.hcl`'s `network { mode = "host"
-  }`, the same pattern `jobs/traefik.nomad.hcl` in `homelab` uses), so the
-  Consul/Vault HTTP APIs resolve at `127.0.0.1:8500`/`8200`, their own
-  local-agent addresses, same as `internal/config`'s own defaults; see
-  `internal/consul` and `internal/vault`. The Docker daemon isn't reachable
-  over the host network the same way — dockerd doesn't listen on TCP by
-  default — so reaching it live means bind-mounting its Unix socket into
-  the container instead (see **Host filesystem access** below for why this
-  is a deliberate exception, not a reuse of the read-only host mount).
+  failure; `nomadCurrent` (`internal/nomad`) hits Nomad's own `GET
+  /v1/agent/self` (unlike Consul's identically-named endpoint, this one
+  requires an ACL token once ACLs are enabled — see `internal/nomad`) and
+  reads `stats.nomad.version` off it directly; `dockerCurrent`
+  (`internal/docker`) hits the local Docker daemon's own Engine API `GET
+  /version` over its Unix socket and reads `Version` off the response body
+  directly. Latest-version checks still go out over public HTTPS to
+  upstream endpoints — the reason the Dockerfile carries
+  `ca-certificates` into the `scratch` image — but the task runs on the
+  host network (see `homelab-cron.nomad.hcl`'s `network { mode = "host" }`,
+  the same pattern `jobs/traefik.nomad.hcl` in `homelab` uses), so the
+  Consul/Vault/Nomad HTTP APIs resolve at `127.0.0.1:8500`/`8200`/`4646`,
+  their own local-agent addresses, same as `internal/config`'s own
+  defaults; see `internal/consul`, `internal/vault`, and `internal/nomad`.
+  The Docker daemon isn't reachable over the host network the same
+  way — dockerd doesn't listen on TCP by default — so reaching it live
+  means bind-mounting its Unix socket into the container instead (see
+  **Host filesystem access** below for why this is a
+  deliberate exception, not a reuse of the read-only host mount).
   Worked example of injecting fetch behavior for both the current version
   (`dependency.fetchCurrent`) and the latest version
   (`dependency.fetchLatest`) for testability, instead of hitting real APIs
@@ -284,6 +299,22 @@ comment on the volume in `homelab-cron.nomad.hcl`.
   unset in production for the same reason as `CONSUL_ADDR` above — the
   task's host networking already reaches it directly. Override only for
   local dev if Vault isn't reachable at that default.
+- `NOMAD_ADDR` — Nomad's HTTP API base URL, used by
+  `internal/nomad.HTTPClient` (see above). `internal/config`'s own default
+  is `http://127.0.0.1:4646` (Nomad's default local-agent address), left
+  unset in production for the same reason as `CONSUL_ADDR`/`VAULT_ADDR`
+  above — the task's host networking already reaches it directly. Override
+  only for local dev if Nomad isn't reachable at that default.
+- `NOMAD_TOKEN` — ACL token sent as Nomad's `X-Nomad-Token` header on every
+  request `internal/nomad.HTTPClient` makes, required once Nomad's ACLs are
+  enabled (agent-self needs at least `agent:read`). Unlike
+  `CONSUL_ADDR`/`VAULT_ADDR`, this isn't a hand-configured default: it's a
+  secret, rendered into the task's env from Vault's
+  `secret/data/homelab/homelab-cron#nomad_token` by
+  `homelab-cron.nomad.hcl`'s `template` block (the same block that renders
+  the AWS SES credentials). Unset in local dev just means that one
+  dependency's check fails and is reported rather than fatal (see
+  `webstackversioncheck.go`'s per-dependency error handling).
 - `DOCKER_SOCK` — path (inside the container) to the Docker Engine API's
   Unix socket, used by `internal/docker.HTTPClient` (see above).
   `internal/config`'s own default is `/var/run/docker.sock`, matching both

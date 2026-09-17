@@ -18,6 +18,8 @@ func TestLoad(t *testing.T) {
 		wantAlertTo    []string
 		wantConsulAddr string
 		wantVaultAddr  string
+		wantNomadAddr  string
+		wantNomadToken string
 		wantDockerSock string
 	}{
 		{
@@ -29,6 +31,8 @@ func TestLoad(t *testing.T) {
 			wantAlertTo:    nil,
 			wantConsulAddr: "http://127.0.0.1:8500",
 			wantVaultAddr:  "http://127.0.0.1:8200",
+			wantNomadAddr:  "http://127.0.0.1:4646",
+			wantNomadToken: "",
 			wantDockerSock: "/var/run/docker.sock",
 		},
 		{
@@ -40,6 +44,8 @@ func TestLoad(t *testing.T) {
 				"ALERT_EMAIL_TO":   "alerts@example.com, oncall@example.com",
 				"CONSUL_ADDR":      "http://consul.service.consul:8500",
 				"VAULT_ADDR":       "http://vault.service.consul:8200",
+				"NOMAD_ADDR":       "http://nomad.service.consul:4646",
+				"NOMAD_TOKEN":      "test-token",
 				"DOCKER_SOCK":      "/tmp/docker.sock",
 			},
 			wantAddr:       ":9090",
@@ -48,6 +54,8 @@ func TestLoad(t *testing.T) {
 			wantAlertTo:    []string{"alerts@example.com", "oncall@example.com"},
 			wantConsulAddr: "http://consul.service.consul:8500",
 			wantVaultAddr:  "http://vault.service.consul:8200",
+			wantNomadAddr:  "http://nomad.service.consul:4646",
+			wantNomadToken: "test-token",
 			wantDockerSock: "/tmp/docker.sock",
 		},
 	}
@@ -66,6 +74,8 @@ func TestLoad(t *testing.T) {
 			assert.Equal(t, tt.wantAlertTo, cfg.AlertEmailTo)
 			assert.Equal(t, tt.wantConsulAddr, cfg.ConsulAddr)
 			assert.Equal(t, tt.wantVaultAddr, cfg.VaultAddr)
+			assert.Equal(t, tt.wantNomadAddr, cfg.NomadAddr)
+			assert.Equal(t, tt.wantNomadToken, cfg.NomadToken)
 			assert.Equal(t, tt.wantDockerSock, cfg.DockerSock)
 		})
 	}
