@@ -98,6 +98,22 @@ type or registry beyond passing the job into `cron.New(...)` in
   reads host filesystem state *and* uses per-run alerting state — copy
   this one for jobs that need to read/tail/scan files under the host mount
   or conditionally alert.
+- `webstackversioncheck.go` — `WebstackVersionCheck`, runs weekly (Monday
+  7am), checks Consul, Vault, Nomad, and Docker versions pinned in the
+  `homelab` repo's Ansible defaults against each project's latest stable
+  release (HashiCorp's releases API; moby/moby's GitHub releases for
+  Docker), and alerts when any has fallen a major version behind. The
+  pinned "current" versions are a hand-maintained snapshot inside the job
+  itself (`NewWebstackVersionCheck`'s `dependency` list) — update them
+  whenever `homelab`'s `provisioning/ansible/roles/*/defaults/main.yml`
+  changes (see that repo's `UPGRADE.md`). Deliberately does not query the
+  actually-running stack: this service isn't on the host network and can't
+  reach Consul/Vault/Nomad's local APIs from inside its container, so it
+  only compares baselines against public upstream endpoints over outbound
+  HTTPS — the reason the Dockerfile carries `ca-certificates` into the
+  `scratch` image. Worked example of a job with no host filesystem access
+  at all, and of injecting fetch behavior (`dependency.fetchLatest`) for
+  testability instead of hitting real APIs in unit tests.
 
 ## Host filesystem access
 
