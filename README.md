@@ -83,12 +83,14 @@ repo variables/secrets.
 
 - **Source `webstack-version-check`'s current versions from the live
   stack instead of a hardcoded list.** `internal/jobs/webstackversioncheck.go`
-  currently compares hand-maintained version strings (copied from
-  `homelab`'s Ansible defaults and `jobs/*.nomad.hcl` image tags) against
-  upstream latest-release APIs — nothing here actually asks Consul, Vault,
-  or Nomad what version they're running, so the baseline silently goes
-  stale unless someone remembers to update it by hand alongside `homelab`.
-  To fix properly:
+  currently compares hand-maintained version strings against upstream
+  latest-release APIs — nothing here actually asks Consul, Vault, or Nomad
+  what version they're running, so the baseline silently goes stale unless
+  someone remembers to update it by hand alongside `homelab`. This already
+  bit once: Vault/Nomad's versions are pinned by an override in
+  `homelab`'s `provisioning/ansible/playbooks/provision.yml`, not their
+  role defaults, and an earlier pass here copied the (stale) role defaults
+  instead — see `homelab`'s `UPGRADE.md`. To fix properly:
   - This job's Nomad task currently uses the default bridge network
     (`homelab-cron.nomad.hcl`'s `network` block has no `mode = "host"`),
     so it can't reach `127.0.0.1:8500`/`8200`/`4646` — the container's

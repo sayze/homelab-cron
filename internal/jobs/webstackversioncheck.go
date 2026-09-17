@@ -12,31 +12,18 @@ import (
 	"time"
 )
 
-// dependency is one component of the homelab stack this job tracks: the
-// version currently pinned in the homelab repo (either an Ansible role
-// default in provisioning/ansible/roles/*/defaults/main.yml, for the
-// host-installed binaries, or a Docker image tag in jobs/*.nomad.hcl, for
-// the containerised services), and how to fetch the latest stable upstream
-// release to compare it against.
+// dependency is one component of the homelab stack this job tracks: its
+// pinned version and how to fetch the latest stable release to compare it
+// against.
 type dependency struct {
 	name           string
 	currentVersion string
 	fetchLatest    func(ctx context.Context) (string, error)
 }
 
-// WebstackVersionCheck compares the versions of Consul, Vault, Nomad,
-// Docker, Traefik, PostgreSQL, and New Relic Infrastructure pinned in the
-// homelab repo against each project's latest stable release, and alerts
-// when any has fallen a major version behind. The pinned versions below are
-// a hand-maintained snapshot — update them whenever the homelab repo's
-// Ansible defaults or jobs/*.nomad.hcl image tags change (see homelab's
-// UPGRADE.md and its README's TODO/Hygiene section for the plan to source
-// these live instead).
-//
-// This never touches the actually-running stack: homelab-cron isn't on the
-// host network and can't reach Consul/Vault/Nomad's local APIs (or the
-// Docker daemon) from inside its container, so this only compares
-// hardcoded baselines against public upstream version endpoints.
+// WebstackVersionCheck compares pinned versions of the homelab stack
+// against each project's latest stable release and alerts when any has
+// fallen a major version behind.
 type WebstackVersionCheck struct {
 	deps []dependency
 
@@ -53,8 +40,8 @@ func NewWebstackVersionCheck() *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
 		{name: "Consul", currentVersion: "1.22.2", fetchLatest: hashiCorpLatest(client, "consul")},
-		{name: "Vault", currentVersion: "1.18.3", fetchLatest: hashiCorpLatest(client, "vault")},
-		{name: "Nomad", currentVersion: "1.8.4", fetchLatest: hashiCorpLatest(client, "nomad")},
+		{name: "Vault", currentVersion: "1.21.4", fetchLatest: hashiCorpLatest(client, "vault")},
+		{name: "Nomad", currentVersion: "1.11.3", fetchLatest: hashiCorpLatest(client, "nomad")},
 		{name: "Docker", currentVersion: "5:28.5.2-1~ubuntu.24.04~noble", fetchLatest: dockerLatest(client)},
 		{name: "Traefik", currentVersion: "3.6.1", fetchLatest: githubLatestTag(client, "traefik", "traefik")},
 		{name: "PostgreSQL", currentVersion: "16", fetchLatest: postgresLatestMajor(client)},
