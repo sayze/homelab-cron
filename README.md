@@ -95,17 +95,16 @@ repo variables/secrets.
   their image tag as `version` Consul service meta, and
   `internal/consul.Client` reads it live (see `CLAUDE.md`). What's left is
   Consul, Vault, Nomad, and Docker, which still use a hardcoded baseline:
-  - This job's Nomad task currently uses the default bridge network
-    (`homelab-cron.nomad.hcl`'s `network` block has no `mode = "host"`),
-    so it can't reach `127.0.0.1:8500`/`8200`/`4646` — the container's
-    loopback isn't the host's. Switching to `mode = "host"` (same as
-    `jobs/traefik.nomad.hcl`/`jobs/newrelic.nomad.hcl`) would fix that,
-    but is a real deployment change (host port binding) worth its own
-    review, not a drive-by edit.
+  - Done: this job's Nomad task now uses host networking
+    (`homelab-cron.nomad.hcl`'s `network` block has `mode = "host"`,
+    same as `jobs/traefik.nomad.hcl`/`jobs/newrelic.nomad.hcl`), so it can
+    already reach `127.0.0.1:8500`/`8200`/`4646` — the blocker for the two
+    bullets below is gone.
   - Consul (`GET /v1/agent/self`, `Config.Version`) and Vault
     (`GET /v1/sys/health`, `version`) are unauthenticated on this stack
     (no Consul ACLs; Vault's health endpoint doesn't require a token), so
-    those two are straightforward once host networking is in place.
+    those two are straightforward now that host networking is in place —
+    still not implemented, just no longer blocked.
   - Nomad has ACLs enabled (`acl.enabled = true` in `nomad.hcl.j2`), so
     its `/v1/agent/self` needs a token. Would need a new read-only Nomad
     ACL policy/token provisioned via `homelab`'s Ansible (same pattern as
