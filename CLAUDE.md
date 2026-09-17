@@ -109,10 +109,14 @@ type or registry beyond passing the job into `cron.New(...)` in
   major version, e.g. `postgres:16`). The pinned "current" versions are a
   hand-maintained snapshot inside the job itself
   (`NewWebstackVersionCheck`'s `dependency` list) — update them whenever
-  `homelab`'s `provisioning/ansible/roles/*/defaults/main.yml` (host
-  binaries) or `jobs/*.nomad.hcl` image tags (containerised services)
-  change (see that repo's `UPGRADE.md` and its README's TODO/Hygiene
-  section for the plan to source these live instead). Deliberately does
+  `homelab` changes: Vault/Nomad from `provisioning/ansible/playbooks/provision.yml`'s
+  `vars:` block specifically, **not** `provisioning/ansible/roles/{vault,nomad}/defaults/main.yml`
+  (those role defaults are stale and overridden by the playbook — see
+  `homelab`'s `UPGRADE.md`); Docker from `provisioning/ansible/roles/docker/defaults/main.yml`
+  (not overridden); Traefik/PostgreSQL/New Relic Infrastructure from
+  `jobs/*.nomad.hcl` image tags. See `homelab`'s `UPGRADE.md` and its
+  README's TODO/Hygiene section for the plan to source these live
+  instead. Deliberately does
   not query the actually-running stack: this service isn't on the host
   network and can't reach Consul/Vault/Nomad's local APIs (or the Docker
   daemon) from inside its container, so it only compares baselines against
