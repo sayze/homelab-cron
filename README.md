@@ -83,14 +83,18 @@ repo variables/secrets.
 
 - **Source `webstack-version-check`'s current versions from the live
   stack instead of a hardcoded list.** `internal/jobs/webstackversioncheck.go`
-  currently compares hand-maintained version strings against upstream
-  latest-release APIs — nothing here actually asks Consul, Vault, or Nomad
-  what version they're running, so the baseline silently goes stale unless
-  someone remembers to update it by hand alongside `homelab`. This already
-  bit once: Vault/Nomad's versions are pinned by an override in
-  `homelab`'s `provisioning/ansible/playbooks/provision.yml`, not their
-  role defaults, and an earlier pass here copied the (stale) role defaults
-  instead — see `homelab`'s `UPGRADE.md`. To fix properly:
+  compares hand-maintained version strings against upstream latest-release
+  APIs — nothing here actually asks Consul, Vault, or Nomad what version
+  they're running, so the baseline silently goes stale unless someone
+  remembers to update it by hand alongside `homelab`. This already bit
+  once: Vault/Nomad's versions are pinned by an override in `homelab`'s
+  `provisioning/ansible/playbooks/provision.yml`, not their role defaults,
+  and an earlier pass here copied the (stale) role defaults instead — see
+  `homelab`'s `UPGRADE.md`. Traefik, PostgreSQL, and New Relic
+  Infrastructure are already fixed: their `homelab` Nomad jobs register
+  their image tag as `version` Consul service meta, and
+  `internal/consul.Client` reads it live (see `CLAUDE.md`). What's left is
+  Consul, Vault, Nomad, and Docker, which still use a hardcoded baseline:
   - This job's Nomad task currently uses the default bridge network
     (`homelab-cron.nomad.hcl`'s `network` block has no `mode = "host"`),
     so it can't reach `127.0.0.1:8500`/`8200`/`4646` — the container's
@@ -112,8 +116,3 @@ repo variables/secrets.
     (as `jobs/newrelic.nomad.hcl` does) and calling the Engine API's
     `/version` — broader access than this service currently needs, so
     worth weighing separately.
-  - Traefik/PostgreSQL/New Relic Infrastructure are Docker image tags
-    pinned in `jobs/*.nomad.hcl` in the `homelab` repo, not services this
-    job could query directly either way — keeping those hardcoded (or
-    reading them out of the deployed Nomad job specs via the Nomad API)
-    is a separate question from the Consul/Vault/Nomad one above.
