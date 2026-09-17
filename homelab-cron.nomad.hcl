@@ -18,6 +18,13 @@ variable "aws_region" {
   default = "us-east-1"
 }
 
+variable "consul_addr" {
+  type = string
+  # Not on the host network, so resolve the placement node's own IP instead
+  # of 127.0.0.1 — Consul listens on all interfaces on every Nomad client.
+  default = "http://${attr.unique.network.ip-address}:8500"
+}
+
 job "homelab-cron" {
   datacenters = ["hl"]
   type        = "service"
@@ -71,6 +78,13 @@ job "homelab-cron" {
         ALERT_EMAIL_FROM = var.alert_email_from
         ALERT_EMAIL_TO   = var.alert_email_to
         AWS_REGION       = var.aws_region
+
+        # Consul's HTTP API address, used by internal/consul.HTTPClient to
+        # read Traefik/PostgreSQL/New Relic Infrastructure's deployed
+        # version from Consul service meta — see var.consul_addr's default
+        # above for why this resolves per allocation instead of being a
+        # fixed address.
+        CONSUL_ADDR = var.consul_addr
       }
 
       # AWS SES credentials for job alert emails (internal/mailer). Read

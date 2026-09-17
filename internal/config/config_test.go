@@ -10,20 +10,22 @@ import (
 
 func TestLoad(t *testing.T) {
 	tests := []struct {
-		name          string
-		env           map[string]string
-		wantAddr      string
-		wantHostRoot  string
-		wantAlertFrom string
-		wantAlertTo   []string
+		name           string
+		env            map[string]string
+		wantAddr       string
+		wantHostRoot   string
+		wantAlertFrom  string
+		wantAlertTo    []string
+		wantConsulAddr string
 	}{
 		{
-			name:          "defaults",
-			env:           nil,
-			wantAddr:      ":8080",
-			wantHostRoot:  "/host",
-			wantAlertFrom: "",
-			wantAlertTo:   nil,
+			name:           "defaults",
+			env:            nil,
+			wantAddr:       ":8080",
+			wantHostRoot:   "/host",
+			wantAlertFrom:  "",
+			wantAlertTo:    nil,
+			wantConsulAddr: "http://127.0.0.1:8500",
 		},
 		{
 			name: "overrides",
@@ -32,11 +34,13 @@ func TestLoad(t *testing.T) {
 				"HOST_ROOT":        "/mnt/host",
 				"ALERT_EMAIL_FROM": "cron@example.com",
 				"ALERT_EMAIL_TO":   "alerts@example.com, oncall@example.com",
+				"CONSUL_ADDR":      "http://consul.service.consul:8500",
 			},
-			wantAddr:      ":9090",
-			wantHostRoot:  "/mnt/host",
-			wantAlertFrom: "cron@example.com",
-			wantAlertTo:   []string{"alerts@example.com", "oncall@example.com"},
+			wantAddr:       ":9090",
+			wantHostRoot:   "/mnt/host",
+			wantAlertFrom:  "cron@example.com",
+			wantAlertTo:    []string{"alerts@example.com", "oncall@example.com"},
+			wantConsulAddr: "http://consul.service.consul:8500",
 		},
 	}
 
@@ -52,6 +56,7 @@ func TestLoad(t *testing.T) {
 			assert.Equal(t, tt.wantHostRoot, cfg.HostRoot)
 			assert.Equal(t, tt.wantAlertFrom, cfg.AlertEmailFrom)
 			assert.Equal(t, tt.wantAlertTo, cfg.AlertEmailTo)
+			assert.Equal(t, tt.wantConsulAddr, cfg.ConsulAddr)
 		})
 	}
 }
