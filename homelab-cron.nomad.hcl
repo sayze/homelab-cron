@@ -51,7 +51,7 @@ job "homelab-cron" {
       driver = "docker"
 
       vault {
-        policies = ["nomad"]
+        role = "nomad-workloads"
       }
 
       config {
