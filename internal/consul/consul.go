@@ -134,9 +134,9 @@ func (c *HTTPClient) version(ctx context.Context, service string) (string, error
 	return version, nil
 }
 
-// agentSelf is the subset of Consul's /v1/agent/self response this package
-// needs.
-type agentSelf struct {
+// agentSelfResponse is the subset of Consul's /v1/agent/self response this
+// package needs.
+type agentSelfResponse struct {
 	Config struct {
 		Version string `json:"Version"`
 	} `json:"Config"`
@@ -165,7 +165,7 @@ func (c *HTTPClient) agentVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("consul: unexpected status %d querying agent self", resp.StatusCode)
 	}
 
-	var body agentSelf
+	var body agentSelfResponse
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return "", fmt.Errorf("consul: decode agent self response: %w", err)
 	}
