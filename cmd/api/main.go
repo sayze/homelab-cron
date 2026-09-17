@@ -30,6 +30,7 @@ func main() {
 	scheduler, err := cron.New(
 		m,
 		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
+		jobs.NewWebstackVersionCheck(),
 	)
 	if err != nil {
 		log.Fatalf("failed to build scheduler: %v", err)

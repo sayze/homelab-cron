@@ -98,6 +98,29 @@ type or registry beyond passing the job into `cron.New(...)` in
   reads host filesystem state *and* uses per-run alerting state — copy
   this one for jobs that need to read/tail/scan files under the host mount
   or conditionally alert.
+- `webstackversioncheck.go` — `WebstackVersionCheck`, runs weekly (Monday
+  7am), checks Consul, Vault, Nomad, Docker, Traefik, PostgreSQL, and New
+  Relic Infrastructure versions pinned in the `homelab` repo against each
+  project's latest stable release, and alerts when any has fallen a major
+  version behind. Latest-version sources: HashiCorp's releases API
+  (Consul/Vault/Nomad), a project's own GitHub releases (Docker via
+  moby/moby, Traefik, New Relic Infrastructure), and postgresql.org's
+  published version list (PostgreSQL — its Docker tag is just the bare
+  major version, e.g. `postgres:16`). The pinned "current" versions are a
+  hand-maintained snapshot inside the job itself
+  (`NewWebstackVersionCheck`'s `dependency` list) — update them whenever
+  `homelab`'s `provisioning/ansible/roles/*/defaults/main.yml` (host
+  binaries) or `jobs/*.nomad.hcl` image tags (containerised services)
+  change (see that repo's `UPGRADE.md` and its README's TODO/Hygiene
+  section for the plan to source these live instead). Deliberately does
+  not query the actually-running stack: this service isn't on the host
+  network and can't reach Consul/Vault/Nomad's local APIs (or the Docker
+  daemon) from inside its container, so it only compares baselines against
+  public upstream endpoints over outbound HTTPS — the reason the
+  Dockerfile carries `ca-certificates` into the `scratch` image. Worked
+  example of a job with no host filesystem access at all, and of injecting
+  fetch behavior (`dependency.fetchLatest`) for testability instead of
+  hitting real APIs in unit tests.
 
 ## Host filesystem access
 
