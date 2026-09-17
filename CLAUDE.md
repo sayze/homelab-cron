@@ -22,7 +22,7 @@ process, not in response to HTTP requests.
   gets a chance to notice cancellation and finish cleanly before the
   process exits.
 - `internal/config/config.go` — env var loading (`ADDR`, `HOST_ROOT`,
-  `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `CONSUL_ADDR`), plain
+  `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `CONSUL_ADDR`, `VAULT_ADDR`), plain
   `os.Getenv`/`os.Getenv` + comma-split with defaults, no third-party config
   library. Deliberately does *not* read AWS credentials/region — those go
   straight to the AWS SDK's own env chain (see `internal/mailer`).
@@ -94,6 +94,23 @@ Consul's HTTP API base URL — `main.go` passes `cfg.ConsulAddr`
 funcs use. Tests fake the `Client` interface directly rather than standing
 up a Consul server.
 
+### Vault client (`internal/vault/`)
+
+`Client` is a one-method interface (`Version(ctx) (string, error)`), read
+by `internal/jobs.WebstackVersionCheck` to look up Vault's own
+actually-deployed version live instead of a hand-maintained baseline (see
+the `webstackversioncheck.go` entry below). `HTTPClient` is the concrete
+implementation, backed by Vault's unauthenticated health endpoint
+(`GET /v1/sys/health`); it reads the `version` key off the response body,
+retrying up to 3 times (1s apart) on failure. Unlike `internal/consul`'s
+`Version`, a non-200 status here isn't itself treated as a failure — Vault
+responds with a status that varies with seal/standby state (e.g. 503
+sealed, 429 standby), but the JSON body, including `version`, is populated
+regardless. `NewHTTPClient(addr, client)` takes Vault's HTTP API base
+URL — `main.go` passes `cfg.VaultAddr` (env var `VAULT_ADDR`) — and an
+`*http.Client`, same shape as `internal/consul.NewHTTPClient`. Tests fake
+the `Client` interface directly rather than standing up a Vault server.
+
 ### Jobs (`internal/jobs/`)
 
 Each file is one `Job` implementation, independent of the others. Copy an
@@ -123,32 +140,38 @@ type or registry beyond passing the job into `cron.New(...)` in
   project's own GitHub releases (Docker via moby/moby, Traefik, New Relic
   Infrastructure), and postgresql.org's published version list (PostgreSQL
   — its Docker tag is just the bare major version, e.g. `postgres:16`).
-  Each `dependency`'s *current* version comes from one of two places.
-  Consul, Vault, Nomad, and Docker use a hand-maintained pinned baseline
+  Each `dependency`'s *current* version comes from one of three places.
+  Consul, Nomad, and Docker still use a hand-maintained pinned baseline
   (`dependency.currentVersion`, set in `NewWebstackVersionCheck`) — update
-  these whenever `homelab` changes: Vault/Nomad from
+  these whenever `homelab` changes: Nomad from
   `provisioning/ansible/playbooks/provision.yml`'s `vars:` block
-  specifically, **not**
-  `provisioning/ansible/roles/{vault,nomad}/defaults/main.yml` (those role
-  defaults are stale and overridden by the playbook — see `homelab`'s
-  `UPGRADE.md`); Docker from
+  specifically, **not** `provisioning/ansible/roles/nomad/defaults/main.yml`
+  (that role default is stale and overridden by the playbook — see
+  `homelab`'s `UPGRADE.md`); Docker from
   `provisioning/ansible/roles/docker/defaults/main.yml` (not overridden).
-  Traefik, PostgreSQL, and New Relic Infrastructure instead read their
-  current version *live* from Consul (`dependency.fetchCurrent`, built by
-  `consulCurrent` — see `internal/consul`), since their Nomad jobs
+  Traefik, PostgreSQL, and New Relic Infrastructure read their current
+  version *live* from Consul service meta (`dependency.fetchCurrent`, built
+  by `consulCurrent` — see `internal/consul`), since their Nomad jobs
   (`jobs/{traefik,postgres,newrelic}.nomad.hcl` in `homelab`) register their
-  image tag as `version` in Consul service meta; this is the first slice of
-  the plan `homelab`'s `UPGRADE.md`/README Hygiene section describes for
-  sourcing baselines live instead of hand-maintaining them — extend the
-  same pattern to Vault/Nomad/Docker if/when their jobs register equivalent
-  meta. This still doesn't reach the Docker daemon directly, and
-  latest-version checks still go out over public HTTPS to upstream
-  endpoints — the reason the Dockerfile carries `ca-certificates` into the
-  `scratch` image — but the task runs on the host network (see
+  image tag as `version` in Consul service meta. Vault reads its current
+  version live too, but differently: `vaultCurrent` (`internal/vault`) hits
+  Vault's own unauthenticated `GET /v1/sys/health` and reads `version` off
+  the response body directly, rather than going through Consul service
+  meta — Vault's health endpoint responds with a non-200 status depending
+  on seal/standby state (e.g. 503 sealed, 429 standby), but the body is
+  populated regardless, so `internal/vault.HTTPClient` doesn't treat a
+  non-200 status itself as a failure. This is the pattern to extend to
+  Consul/Nomad/Docker next, per the plan `homelab`'s `UPGRADE.md`/README
+  Hygiene section describes for sourcing baselines live instead of
+  hand-maintaining them. This still doesn't reach the Docker daemon
+  directly, and latest-version checks still go out over public HTTPS to
+  upstream endpoints — the reason the Dockerfile carries `ca-certificates`
+  into the `scratch` image — but the task runs on the host network (see
   `homelab-cron.nomad.hcl`'s `network { mode = "host" }`, the same pattern
-  `jobs/traefik.nomad.hcl` in `homelab` uses), so the Consul HTTP API
-  resolves at `127.0.0.1:8500`, Consul's own local-agent address, same as
-  `internal/config`'s own default; see `internal/consul`.
+  `jobs/traefik.nomad.hcl` in `homelab` uses), so the Consul/Vault HTTP
+  APIs resolve at `127.0.0.1:8500`/`8200`, their own local-agent addresses,
+  same as `internal/config`'s own defaults; see `internal/consul` and
+  `internal/vault`.
   Worked example of injecting fetch behavior for both the current version
   (`dependency.fetchCurrent`) and the latest version
   (`dependency.fetchLatest`) for testability, instead of hitting real APIs
@@ -217,6 +240,12 @@ filesystem, not the host's.
   the placement node's own Consul agent directly — no per-allocation
   address resolution needed. Override only for local dev if Consul isn't
   reachable at that default (e.g. a remote dev Consul).
+- `VAULT_ADDR` — Vault's HTTP API base URL, used by
+  `internal/vault.HTTPClient` (see above). `internal/config`'s own default
+  is `http://127.0.0.1:8200` (Vault's default local-agent address), left
+  unset in production for the same reason as `CONSUL_ADDR` above — the
+  task's host networking already reaches it directly. Override only for
+  local dev if Vault isn't reachable at that default.
 
 ## Docker
 

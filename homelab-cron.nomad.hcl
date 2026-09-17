@@ -75,9 +75,10 @@ job "homelab-cron" {
         ALERT_EMAIL_TO   = var.alert_email_to
         AWS_REGION       = var.aws_region
 
-        # CONSUL_ADDR is deliberately unset here: on the host network,
-        # internal/config's own default (http://127.0.0.1:8500, Consul's
-        # local agent) already resolves correctly, same as traefik.nomad.hcl's
+        # CONSUL_ADDR/VAULT_ADDR are deliberately unset here: on the host
+        # network, internal/config's own defaults (http://127.0.0.1:8500
+        # and :8200, Consul's and Vault's own local-agent addresses)
+        # already resolve correctly, same as traefik.nomad.hcl's
         # --providers.consulcatalog.endpoint.address.
       }
 
