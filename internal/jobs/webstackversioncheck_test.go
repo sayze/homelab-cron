@@ -48,6 +48,14 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 			wantSubstr:  []string{"Docker"},
 		},
 		{
+			name: "postgres bare major version format compares correctly",
+			deps: []dependency{
+				{name: "PostgreSQL", currentVersion: "16", fetchLatest: fakeLatest("18", nil)},
+			},
+			wantContent: true,
+			wantSubstr:  []string{"PostgreSQL"},
+		},
+		{
 			name: "fetch failure is reported, not fatal",
 			deps: []dependency{
 				{name: "Vault", currentVersion: "1.18.3", fetchLatest: fakeLatest("", errors.New("boom"))},
@@ -110,6 +118,8 @@ func TestMajorVersion(t *testing.T) {
 		{in: "2.0.4", want: 2},
 		{in: "v29.8.1", want: 29},
 		{in: "5:28.5.2-1~ubuntu.24.04~noble", want: 28},
+		{in: "16", want: 16},
+		{in: "18", want: 18},
 		{in: "not-a-version", wantErr: true},
 	}
 

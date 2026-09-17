@@ -13,26 +13,30 @@ import (
 )
 
 // dependency is one component of the homelab stack this job tracks: the
-// version currently pinned in the homelab repo's Ansible role defaults
-// (provisioning/ansible/roles/*/defaults/main.yml), and how to fetch the
-// latest stable upstream release to compare it against.
+// version currently pinned in the homelab repo (either an Ansible role
+// default in provisioning/ansible/roles/*/defaults/main.yml, for the
+// host-installed binaries, or a Docker image tag in jobs/*.nomad.hcl, for
+// the containerised services), and how to fetch the latest stable upstream
+// release to compare it against.
 type dependency struct {
 	name           string
 	currentVersion string
 	fetchLatest    func(ctx context.Context) (string, error)
 }
 
-// WebstackVersionCheck compares the versions of Consul, Vault, Nomad, and
-// Docker pinned in the homelab repo against each project's latest stable
-// release, and alerts when any has fallen a major version behind. The
-// pinned versions below are a hand-maintained snapshot — update them
-// whenever the homelab repo's Ansible defaults change (see homelab's
-// UPGRADE.md).
+// WebstackVersionCheck compares the versions of Consul, Vault, Nomad,
+// Docker, Traefik, PostgreSQL, and New Relic Infrastructure pinned in the
+// homelab repo against each project's latest stable release, and alerts
+// when any has fallen a major version behind. The pinned versions below are
+// a hand-maintained snapshot — update them whenever the homelab repo's
+// Ansible defaults or jobs/*.nomad.hcl image tags change (see homelab's
+// UPGRADE.md and its README's TODO/Hygiene section for the plan to source
+// these live instead).
 //
 // This never touches the actually-running stack: homelab-cron isn't on the
-// host network and can't reach Consul/Vault/Nomad's local APIs from inside
-// its container, so this only compares hardcoded baselines against public
-// upstream version endpoints.
+// host network and can't reach Consul/Vault/Nomad's local APIs (or the
+// Docker daemon) from inside its container, so this only compares
+// hardcoded baselines against public upstream version endpoints.
 type WebstackVersionCheck struct {
 	deps []dependency
 
@@ -41,8 +45,10 @@ type WebstackVersionCheck struct {
 }
 
 // NewWebstackVersionCheck builds the check against HashiCorp's public
-// releases API (Consul/Vault/Nomad) and moby/moby's GitHub releases
-// (Docker Engine).
+// releases API (Consul/Vault/Nomad), moby/moby's GitHub releases (Docker
+// Engine), each image's own GitHub releases (Traefik, New Relic
+// Infrastructure), and postgresql.org's published version list (PostgreSQL,
+// whose Docker tag is just the bare major version).
 func NewWebstackVersionCheck() *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
@@ -50,6 +56,9 @@ func NewWebstackVersionCheck() *WebstackVersionCheck {
 		{name: "Vault", currentVersion: "1.18.3", fetchLatest: hashiCorpLatest(client, "vault")},
 		{name: "Nomad", currentVersion: "1.8.4", fetchLatest: hashiCorpLatest(client, "nomad")},
 		{name: "Docker", currentVersion: "5:28.5.2-1~ubuntu.24.04~noble", fetchLatest: dockerLatest(client)},
+		{name: "Traefik", currentVersion: "3.6.1", fetchLatest: githubLatestTag(client, "traefik", "traefik")},
+		{name: "PostgreSQL", currentVersion: "16", fetchLatest: postgresLatestMajor(client)},
+		{name: "New Relic Infrastructure", currentVersion: "1.71.1", fetchLatest: githubLatestTag(client, "newrelic", "infrastructure-agent")},
 	})
 }
 
@@ -139,17 +148,47 @@ func hashiCorpLatest(client *http.Client, product string) func(context.Context) 
 // dockerLatest returns a fetchLatest func for Docker Engine, backed by
 // moby/moby's latest GitHub release tag (e.g. "v29.8.1").
 func dockerLatest(client *http.Client) func(context.Context) (string, error) {
+	return githubLatestTag(client, "moby", "moby")
+}
+
+// githubLatestTag returns a fetchLatest func backed by a GitHub repo's
+// latest release tag (e.g. Traefik's "v3.7.13", New Relic's "1.80.3").
+func githubLatestTag(client *http.Client, owner, repo string) func(context.Context) (string, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
 	return func(ctx context.Context) (string, error) {
 		var body struct {
 			TagName string `json:"tag_name"`
 		}
-		if err := getJSON(ctx, client, "https://api.github.com/repos/moby/moby/releases/latest", &body); err != nil {
+		if err := getJSON(ctx, client, url, &body); err != nil {
 			return "", err
 		}
 		if body.TagName == "" {
-			return "", fmt.Errorf("docker: no tag_name in response")
+			return "", fmt.Errorf("%s/%s: no tag_name in response", owner, repo)
 		}
 		return body.TagName, nil
+	}
+}
+
+// postgresLatestMajor returns a fetchLatest func for PostgreSQL, backed by
+// postgresql.org's published version list. PostgreSQL's Docker tags (e.g.
+// "postgres:16") are just the bare major version, so this returns whichever
+// entry is currently marked "current" (e.g. "18") rather than a full
+// semver release.
+func postgresLatestMajor(client *http.Client) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		var versions []struct {
+			Major   string `json:"major"`
+			Current bool   `json:"current"`
+		}
+		if err := getJSON(ctx, client, "https://www.postgresql.org/versions.json", &versions); err != nil {
+			return "", err
+		}
+		for _, v := range versions {
+			if v.Current {
+				return v.Major, nil
+			}
+		}
+		return "", fmt.Errorf("postgresql: no current version found in versions.json")
 	}
 }
 
