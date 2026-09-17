@@ -19,6 +19,7 @@ import (
 	"homelab-cron/internal/jobs"
 	"homelab-cron/internal/mailer"
 	"homelab-cron/internal/server"
+	"homelab-cron/internal/vault"
 )
 
 func main() {
@@ -30,11 +31,12 @@ func main() {
 	}
 
 	consulClient := consul.NewHTTPClient(cfg.ConsulAddr, &http.Client{Timeout: 10 * time.Second})
+	vaultClient := vault.NewHTTPClient(cfg.VaultAddr, &http.Client{Timeout: 10 * time.Second})
 
 	scheduler, err := cron.New(
 		m,
 		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
-		jobs.NewWebstackVersionCheck(consulClient),
+		jobs.NewWebstackVersionCheck(consulClient, vaultClient),
 	)
 	if err != nil {
 		log.Fatalf("failed to build scheduler: %v", err)

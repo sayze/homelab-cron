@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"homelab-cron/internal/consul"
+	"homelab-cron/internal/vault"
 )
 
 // dependency is one component of the homelab stack this job tracks: its
@@ -21,10 +22,11 @@ type dependency struct {
 	name string
 
 	// currentVersion is a hand-maintained pinned baseline, used when
-	// fetchCurrent is nil. Dependencies whose Nomad job registers its
-	// deployed version as Consul service meta use fetchCurrent instead, so
-	// the baseline can't drift out of sync with what's actually running —
-	// see consulCurrent.
+	// fetchCurrent is nil. Dependencies that can report their own deployed
+	// version live use fetchCurrent instead, so the baseline can't drift
+	// out of sync with what's actually running — see consulCurrent (via
+	// Consul service meta) and vaultCurrent (via Vault's own health
+	// endpoint).
 	currentVersion string
 	fetchCurrent   func(ctx context.Context) (string, error)
 
@@ -46,7 +48,7 @@ type WebstackVersionCheck struct {
 // Engine), each image's own GitHub releases (Traefik, New Relic
 // Infrastructure), and postgresql.org's published version list (PostgreSQL,
 // whose Docker tag is just the bare major version).
-func NewWebstackVersionCheck(consulClient consul.Client) *WebstackVersionCheck {
+func NewWebstackVersionCheck(consulClient consul.Client, vaultClient vault.Client) *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
 		{
@@ -55,9 +57,9 @@ func NewWebstackVersionCheck(consulClient consul.Client) *WebstackVersionCheck {
 			fetchLatest:    hashiCorpLatest(client, "consul"),
 		},
 		{
-			name:           "Vault",
-			currentVersion: "1.21.4",
-			fetchLatest:    hashiCorpLatest(client, "vault"),
+			name:         "Vault",
+			fetchCurrent: vaultCurrent(vaultClient),
+			fetchLatest:  hashiCorpLatest(client, "vault"),
 		},
 		{
 			name:           "Nomad",
@@ -169,6 +171,15 @@ func (j *WebstackVersionCheck) EmailContent() string {
 func consulCurrent(consulClient consul.Client, service string) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		return consulClient.Version(ctx, service)
+	}
+}
+
+// vaultCurrent returns a fetchCurrent func that reads Vault's own
+// deployed version live from its health endpoint, via vaultClient — see
+// internal/vault.
+func vaultCurrent(vaultClient vault.Client) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		return vaultClient.Version(ctx)
 	}
 }
 

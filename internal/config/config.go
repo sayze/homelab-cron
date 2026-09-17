@@ -33,6 +33,7 @@ type Config struct {
 	AlertEmailTo   []string
 
 	ConsulAddr string
+	VaultAddr  string
 }
 
 // Load reads homelab-cron's configuration from environment variables,
@@ -44,6 +45,7 @@ func Load() Config {
 		AlertEmailFrom: os.Getenv("ALERT_EMAIL_FROM"),
 		AlertEmailTo:   getEnvList("ALERT_EMAIL_TO"),
 		ConsulAddr:     getEnv("CONSUL_ADDR", "http://127.0.0.1:8500"),
+		VaultAddr:      getEnv("VAULT_ADDR", "http://127.0.0.1:8200"),
 	}
 }
 

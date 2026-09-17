@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"homelab-cron/internal/consul"
+	"homelab-cron/internal/vault"
 )
 
 func TestWebstackVersionCheck_Run(t *testing.T) {
@@ -180,6 +181,38 @@ func TestConsulCurrent(t *testing.T) {
 		assert.ErrorContains(t, err, "boom")
 	})
 }
+
+func TestVaultCurrent(t *testing.T) {
+	t.Run("returns the version vault reports for itself", func(t *testing.T) {
+		client := fakeVaultClient{version: "1.21.4"}
+
+		got, err := vaultCurrent(client)(context.Background())
+
+		assert.NoError(t, err)
+		assert.Equal(t, "1.21.4", got)
+	})
+
+	t.Run("propagates a vault error", func(t *testing.T) {
+		client := fakeVaultClient{err: errors.New("boom")}
+
+		_, err := vaultCurrent(client)(context.Background())
+
+		assert.ErrorContains(t, err, "boom")
+	})
+}
+
+// fakeVaultClient is a vault.Client fake, used to test vaultCurrent without
+// a real Vault server.
+type fakeVaultClient struct {
+	version string
+	err     error
+}
+
+func (f fakeVaultClient) Version(context.Context) (string, error) {
+	return f.version, f.err
+}
+
+var _ vault.Client = fakeVaultClient{}
 
 // fakeCurrent returns a fetchCurrent func for use in dependency structs in
 // tests, mirroring fakeLatest below.
