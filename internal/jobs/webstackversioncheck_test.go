@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"homelab-cron/internal/consul"
+	"homelab-cron/internal/docker"
 	"homelab-cron/internal/vault"
 )
 
@@ -97,6 +98,22 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 			},
 			wantContent: true,
 			wantSubstr:  []string{"New Relic Infrastructure", "could not check current version", "no healthy instance"},
+		},
+		{
+			name: "current version sourced from docker, major version behind",
+			deps: []dependency{
+				{name: "Docker", fetchCurrent: fakeCurrent("28.5.2", nil), fetchLatest: fakeLatest("v29.8.1", nil)},
+			},
+			wantContent: true,
+			wantSubstr:  []string{"Docker", "28.5.2", "v29.8.1"},
+		},
+		{
+			name: "docker fetch failure is reported, not fatal",
+			deps: []dependency{
+				{name: "Docker", fetchCurrent: fakeCurrent("", errors.New("docker: query version failed after 3 attempts: dial unix: no such file or directory")), fetchLatest: fakeLatest("v29.8.1", nil)},
+			},
+			wantContent: true,
+			wantSubstr:  []string{"Docker", "could not check current version", "no such file or directory"},
 		},
 	}
 
@@ -233,6 +250,19 @@ func (f fakeVaultClient) Version(context.Context) (string, error) {
 
 var _ vault.Client = fakeVaultClient{}
 
+// fakeDockerClient is a docker.Client fake, used to test dockerCurrent
+// without a real Docker daemon.
+type fakeDockerClient struct {
+	version string
+	err     error
+}
+
+func (f fakeDockerClient) Version(context.Context) (string, error) {
+	return f.version, f.err
+}
+
+var _ docker.Client = fakeDockerClient{}
+
 // fakeCurrent returns a fetchCurrent func for use in dependency structs in
 // tests, mirroring fakeLatest below.
 func fakeCurrent(version string, err error) func(context.Context) (string, error) {
@@ -244,6 +274,25 @@ func fakeCurrent(version string, err error) func(context.Context) (string, error
 // agentSelfKey is the fakeConsulClient key used for AgentVersion, which
 // (unlike Version) isn't keyed by a service name.
 const agentSelfKey = "self"
+
+func TestDockerCurrent(t *testing.T) {
+	t.Run("returns the version the local docker daemon reports for itself", func(t *testing.T) {
+		client := fakeDockerClient{version: "28.5.2"}
+
+		got, err := dockerCurrent(client)(context.Background())
+
+		assert.NoError(t, err)
+		assert.Equal(t, "28.5.2", got)
+	})
+
+	t.Run("propagates a docker error", func(t *testing.T) {
+		client := fakeDockerClient{err: errors.New("boom")}
+
+		_, err := dockerCurrent(client)(context.Background())
+
+		assert.ErrorContains(t, err, "boom")
+	})
+}
 
 // fakeConsulClient is a consul.Client fake keyed by service name, used to
 // test consulCurrent without a real Consul server.

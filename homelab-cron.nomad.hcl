@@ -61,15 +61,24 @@ job "homelab-cron" {
         image        = var.image
         network_mode = "host"
 
-        # Read-only bind mount of the entire host filesystem.
         volumes = [
+          # Read-only bind mount of the entire host filesystem.
           "/:/host:ro,rslave",
+
+          # Docker Engine API socket, for internal/docker's live version
+          # check. NOTE: root-equivalent access, ":ro" doesn't restrict it
+          # (see CLAUDE.md's "Host filesystem access").
+          "/var/run/docker.sock:/var/run/docker.sock",
         ]
       }
 
       env {
         ADDR      = ":8080"
         HOST_ROOT = "/host"
+
+        # DOCKER_SOCK is deliberately unset here: internal/config's own
+        # default ("/var/run/docker.sock") already matches the volume mount
+        # above.
 
         ALERT_EMAIL_FROM = var.alert_email_from
         ALERT_EMAIL_TO   = var.alert_email_to

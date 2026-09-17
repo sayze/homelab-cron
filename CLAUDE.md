@@ -111,6 +111,25 @@ URL — `main.go` passes `cfg.VaultAddr` (env var `VAULT_ADDR`) — and an
 `*http.Client`, same shape as `internal/consul.NewHTTPClient`. Tests fake
 the `Client` interface directly rather than standing up a Vault server.
 
+### Docker client (`internal/docker/`)
+
+`Client` is a one-method interface (`Version(ctx) (string, error)`), read
+by `internal/jobs.WebstackVersionCheck` to look up the local Docker
+daemon's own actually-deployed version live instead of a hand-maintained
+baseline (see the `webstackversioncheck.go` entry below). `HTTPClient` is
+the concrete implementation, backed by the Docker Engine API's `GET
+/version`; it reads the `Version` key off the response body, retrying up
+to 3 times (1s apart) on failure — same retry shape as `internal/consul`
+and `internal/vault`. Unlike those two, dockerd doesn't listen on TCP by
+default, so there's no `addr`/`*http.Client` pair to inject: instead
+`NewHTTPClient(sockPath string)` builds its own `*http.Client` with a
+`Transport.DialContext` that always dials the Unix socket at `sockPath`
+(homelab-cron's own `DOCKER_SOCK` config, `cfg.DockerSock`), regardless of
+the request URL's host. Tests fake the `Client` interface directly for
+`internal/jobs`, and exercise `HTTPClient` itself against a real Unix
+socket listener in a temp dir rather than a fake host/port server, so the
+dialer is actually covered.
+
 ### Jobs (`internal/jobs/`)
 
 Each file is one `Job` implementation, independent of the others. Copy an
@@ -141,20 +160,19 @@ type or registry beyond passing the job into `cron.New(...)` in
   Infrastructure), and postgresql.org's published version list (PostgreSQL
   — its Docker tag is just the bare major version, e.g. `postgres:16`).
   Each `dependency`'s *current* version comes from one of three places.
-  Nomad and Docker still use a hand-maintained pinned baseline
+  Nomad alone still uses a hand-maintained pinned baseline
   (`dependency.currentVersion`, set in `NewWebstackVersionCheck`) — update
-  these whenever `homelab` changes: Nomad from
+  it whenever `homelab` changes, from
   `provisioning/ansible/playbooks/provision.yml`'s `vars:` block
   specifically, **not** `provisioning/ansible/roles/nomad/defaults/main.yml`
   (that role default is stale and overridden by the playbook — see
-  `homelab`'s `UPGRADE.md`); Docker from
-  `provisioning/ansible/roles/docker/defaults/main.yml` (not overridden).
-  Traefik, PostgreSQL, and New Relic Infrastructure read their current
-  version *live* from Consul service meta (`dependency.fetchCurrent`, built
-  by `consulCurrent` — see `internal/consul`), since their Nomad jobs
+  `homelab`'s `UPGRADE.md`). Traefik, PostgreSQL, and New Relic
+  Infrastructure read their current version *live* from Consul service meta
+  (`dependency.fetchCurrent`, built by `consulCurrent` — see
+  `internal/consul`), since their Nomad jobs
   (`jobs/{traefik,postgres,newrelic}.nomad.hcl` in `homelab`) register their
-  image tag as `version` in Consul service meta. Consul and Vault instead
-  read their own current version live from their own endpoints, not
+  image tag as `version` in Consul service meta. Consul, Vault, and Docker
+  instead read their own current version live from their own endpoints, not
   through Consul service meta: `consulAgentVersion` (`internal/consul`)
   hits Consul's own `GET /v1/agent/self` and reads `Config.Version` off it
   directly; `vaultCurrent` (`internal/vault`) hits Vault's own
@@ -163,17 +181,23 @@ type or registry beyond passing the job into `cron.New(...)` in
   non-200 status depending on seal/standby state (e.g. 503 sealed, 429
   standby), but the body is populated regardless, so
   `internal/vault.HTTPClient` doesn't treat a non-200 status itself as a
-  failure. This is the pattern to extend to Nomad/Docker next, per the
-  plan `homelab`'s `UPGRADE.md`/README Hygiene section describes for
-  sourcing baselines live instead of hand-maintaining them. This still
-  doesn't reach the Docker daemon directly, and latest-version checks
-  still go out over public HTTPS to upstream endpoints — the reason the
-  Dockerfile carries `ca-certificates` into the `scratch` image — but the
-  task runs on the host network (see `homelab-cron.nomad.hcl`'s `network {
-  mode = "host" }`, the same pattern `jobs/traefik.nomad.hcl` in `homelab`
-  uses), so the Consul/Vault HTTP APIs resolve at `127.0.0.1:8500`/`8200`,
-  their own local-agent addresses, same as `internal/config`'s own
-  defaults; see `internal/consul` and `internal/vault`.
+  failure; `dockerCurrent` (`internal/docker`) hits the local Docker
+  daemon's own Engine API `GET /version` over its Unix socket and reads
+  `Version` off the response body directly. This is the pattern
+  `homelab`'s `UPGRADE.md`/README Hygiene section describes for sourcing
+  baselines live instead of hand-maintaining them — Nomad is the one
+  dependency left to extend it to next. Latest-version checks still go out
+  over public HTTPS to upstream endpoints — the reason the Dockerfile
+  carries `ca-certificates` into the `scratch` image — but the task runs on
+  the host network (see `homelab-cron.nomad.hcl`'s `network { mode = "host"
+  }`, the same pattern `jobs/traefik.nomad.hcl` in `homelab` uses), so the
+  Consul/Vault HTTP APIs resolve at `127.0.0.1:8500`/`8200`, their own
+  local-agent addresses, same as `internal/config`'s own defaults; see
+  `internal/consul` and `internal/vault`. The Docker daemon isn't reachable
+  over the host network the same way — dockerd doesn't listen on TCP by
+  default — so reaching it live means bind-mounting its Unix socket into
+  the container instead (see **Host filesystem access** below for why this
+  is a deliberate exception, not a reuse of the read-only host mount).
   Worked example of injecting fetch behavior for both the current version
   (`dependency.fetchCurrent`) and the latest version
   (`dependency.fetchLatest`) for testability, instead of hitting real APIs
@@ -207,6 +231,18 @@ Jobs needing to look at some host path should build it off `cfg.HostRoot`
 `aptupgrade.go`) rather than hardcoding an absolute path, since a bare
 `/var/log` inside the container refers to the container's own (empty)
 filesystem, not the host's.
+
+The Docker Engine API's Unix socket (`internal/docker`,
+`internal/jobs.WebstackVersionCheck`'s live Docker version check) is the
+one deliberate exception mentioned above: it's bind-mounted separately at
+`cfg.DockerSock` (env var `DOCKER_SOCK`, default `/var/run/docker.sock`),
+not folded into the host-root mount. `:ro` on that mount only stops the
+container from replacing/deleting the socket file itself — a process
+connected to it still gets the full Docker Engine API (create/exec/mount
+containers, etc.), which is root-equivalent on the host regardless of the
+mount's read-only flag. `internal/docker.HTTPClient` only ever calls `GET
+/version` through it, but the mount itself grants more than that — see the
+comment on the volume in `homelab-cron.nomad.hcl`.
 
 ## Adding a new job
 
@@ -248,6 +284,14 @@ filesystem, not the host's.
   unset in production for the same reason as `CONSUL_ADDR` above — the
   task's host networking already reaches it directly. Override only for
   local dev if Vault isn't reachable at that default.
+- `DOCKER_SOCK` — path (inside the container) to the Docker Engine API's
+  Unix socket, used by `internal/docker.HTTPClient` (see above).
+  `internal/config`'s own default is `/var/run/docker.sock`, matching both
+  `homelab-cron.nomad.hcl`'s and `docker-compose.yml`'s socket bind mount
+  destination — see **Host filesystem access** above for why this is
+  mounted separately from `HOST_ROOT` rather than folded into it. Override
+  only for local dev if the socket is bind-mounted somewhere else inside
+  the container.
 
 ## Docker
 
@@ -261,8 +305,12 @@ Two-stage build, same shape as `qotd-api`:
 Build/run:
 ```
 docker build -t homelab-cron:dev .
-docker run --rm -p 8080:8080 -v /:/host:ro homelab-cron:dev
+docker run --rm -p 8080:8080 -v /:/host:ro -v /var/run/docker.sock:/var/run/docker.sock homelab-cron:dev
 ```
+(the Docker socket mount is only needed to exercise
+`internal/jobs.WebstackVersionCheck`'s live Docker version check — see
+**Host filesystem access** above for why it's unmounted separately, rather
+than read-only, from `-v /:/host:ro`.)
 
 For local dev, `docker-compose.yml` builds and runs the same image; copy
 `.env.example` to `.env`, then `docker compose up --build`.

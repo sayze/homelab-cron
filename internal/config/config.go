@@ -34,6 +34,10 @@ type Config struct {
 
 	ConsulAddr string
 	VaultAddr  string
+
+	// DockerSock is the path (inside the container) to the Docker Engine
+	// API's Unix socket, used by internal/docker.HTTPClient.
+	DockerSock string
 }
 
 // Load reads homelab-cron's configuration from environment variables,
@@ -46,6 +50,7 @@ func Load() Config {
 		AlertEmailTo:   getEnvList("ALERT_EMAIL_TO"),
 		ConsulAddr:     getEnv("CONSUL_ADDR", "http://127.0.0.1:8500"),
 		VaultAddr:      getEnv("VAULT_ADDR", "http://127.0.0.1:8200"),
+		DockerSock:     getEnv("DOCKER_SOCK", "/var/run/docker.sock"),
 	}
 }
 
