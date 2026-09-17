@@ -37,11 +37,7 @@ type Config struct {
 
 	// NomadAddr is Nomad's HTTP API base URL, used by
 	// internal/nomad.HTTPClient. NomadToken is the ACL token sent with every
-	// request as Nomad's X-Nomad-Token header — unlike ConsulAddr/VaultAddr,
-	// Nomad's own agent-self endpoint requires one once ACLs are enabled.
-	// NomadToken has no default: it's a secret, rendered into the task's env
-	// from Vault (see homelab-cron.nomad.hcl's template block), not
-	// hand-configured like the other addrs.
+	// request as Nomad's X-Nomad-Token header.
 	NomadAddr  string
 	NomadToken string
 

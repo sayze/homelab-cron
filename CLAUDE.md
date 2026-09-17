@@ -200,20 +200,18 @@ type or registry beyond passing the job into `cron.New(...)` in
   reads `stats.nomad.version` off it directly; `dockerCurrent`
   (`internal/docker`) hits the local Docker daemon's own Engine API `GET
   /version` over its Unix socket and reads `Version` off the response body
-  directly. This is the pattern `homelab`'s `UPGRADE.md`/README Hygiene
-  section describes for sourcing baselines live instead of
-  hand-maintaining them. Latest-version checks still go out over public
-  HTTPS to upstream endpoints — the reason the Dockerfile carries
+  directly. Latest-version checks still go out over public HTTPS to
+  upstream endpoints — the reason the Dockerfile carries
   `ca-certificates` into the `scratch` image — but the task runs on the
   host network (see `homelab-cron.nomad.hcl`'s `network { mode = "host" }`,
   the same pattern `jobs/traefik.nomad.hcl` in `homelab` uses), so the
-  Consul/Vault/Nomad HTTP APIs resolve at
-  `127.0.0.1:8500`/`8200`/`4646`, their own local-agent addresses, same as
-  `internal/config`'s own defaults; see `internal/consul`, `internal/vault`,
-  and `internal/nomad`. The Docker daemon isn't reachable over the host
-  network the same way — dockerd doesn't listen on TCP by default — so
-  reaching it live means bind-mounting its Unix socket into the container
-  instead (see **Host filesystem access** below for why this is a
+  Consul/Vault/Nomad HTTP APIs resolve at `127.0.0.1:8500`/`8200`/`4646`,
+  their own local-agent addresses, same as `internal/config`'s own
+  defaults; see `internal/consul`, `internal/vault`, and `internal/nomad`.
+  The Docker daemon isn't reachable over the host network the same
+  way — dockerd doesn't listen on TCP by default — so reaching it live
+  means bind-mounting its Unix socket into the container instead (see
+  **Host filesystem access** below for why this is a
   deliberate exception, not a reuse of the read-only host mount).
   Worked example of injecting fetch behavior for both the current version
   (`dependency.fetchCurrent`) and the latest version
