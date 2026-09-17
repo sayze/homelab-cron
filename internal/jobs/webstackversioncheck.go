@@ -204,7 +204,11 @@ func getJSON(ctx context.Context, client *http.Client, url string, out any) erro
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Printf("webstack-version-check: closing response body from %s: %v", url, cerr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
