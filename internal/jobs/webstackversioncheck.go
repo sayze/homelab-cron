@@ -49,7 +49,11 @@ type WebstackVersionCheck struct {
 // Engine), each image's own GitHub releases (Traefik, New Relic
 // Infrastructure), and postgresql.org's published version list (PostgreSQL,
 // whose Docker tag is just the bare major version).
-func NewWebstackVersionCheck(consulClient consul.Client, vaultClient vault.Client, dockerClient docker.Client) *WebstackVersionCheck {
+func NewWebstackVersionCheck(
+	consulClient consul.Client,
+	vaultClient vault.Client,
+	dockerClient docker.Client,
+) *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
 		{

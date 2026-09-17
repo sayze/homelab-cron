@@ -1,8 +1,6 @@
 // Package docker is a minimal read-only client for the Docker Engine API.
 // internal/jobs.WebstackVersionCheck uses it to read the Docker daemon's own
-// actually-deployed version, the same live-instead-of-pinned pattern
-// internal/consul and internal/vault use for Consul/Vault/Traefik/
-// PostgreSQL/New Relic Infrastructure.
+// actually-deployed version.
 package docker
 
 import (

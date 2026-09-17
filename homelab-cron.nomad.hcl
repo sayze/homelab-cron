@@ -65,19 +65,9 @@ job "homelab-cron" {
           # Read-only bind mount of the entire host filesystem.
           "/:/host:ro,rslave",
 
-          # The Docker Engine API's Unix socket, read by internal/docker so
-          # WebstackVersionCheck can read the daemon's own deployed version
-          # live instead of a hand-maintained baseline (see
-          # internal/jobs/webstackversioncheck.go). NOTE: unlike the host
-          # root mount above, ":ro" here only stops the container from
-          # replacing/deleting the socket file itself — a process connected
-          # to it still gets the full Docker Engine API, which is
-          # root-equivalent on this host (e.g. it can create a privileged
-          # container that mounts the host filesystem read-write). This is
-          # the deliberate, explicit exception to this service's
-          # read-only-host design that CLAUDE.md's "Host filesystem access"
-          # section calls for; WebstackVersionCheck only ever calls
-          # GET /version through it.
+          # Docker Engine API socket, for internal/docker's live version
+          # check. NOTE: root-equivalent access, ":ro" doesn't restrict it
+          # (see CLAUDE.md's "Host filesystem access").
           "/var/run/docker.sock:/var/run/docker.sock",
         ]
       }

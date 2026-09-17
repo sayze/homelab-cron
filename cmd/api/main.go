@@ -31,9 +31,9 @@ func main() {
 		log.Fatalf("failed to build mailer: %v", err)
 	}
 
-	consulClient := consul.NewHTTPClient(cfg.ConsulAddr, &http.Client{Timeout: 10 * time.Second})
-	vaultClient := vault.NewHTTPClient(cfg.VaultAddr, &http.Client{Timeout: 10 * time.Second})
-	dockerClient := docker.NewHTTPClient(cfg.DockerSock)
+	consulClient, vaultClient, dockerClient := consul.NewHTTPClient(cfg.ConsulAddr, &http.Client{Timeout: 10 * time.Second}),
+		vault.NewHTTPClient(cfg.VaultAddr, &http.Client{Timeout: 10 * time.Second}),
+		docker.NewHTTPClient(cfg.DockerSock)
 
 	scheduler, err := cron.New(
 		m,

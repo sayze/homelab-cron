@@ -36,12 +36,7 @@ type Config struct {
 	VaultAddr  string
 
 	// DockerSock is the path (inside the container) to the Docker Engine
-	// API's Unix socket, used by internal/docker.HTTPClient to read the
-	// local daemon's own deployed version (see
-	// internal/jobs/webstackversioncheck.go). Unlike ConsulAddr/VaultAddr,
-	// this isn't reachable via host networking alone — dockerd doesn't
-	// listen on TCP by default — so the socket itself must be bind-mounted
-	// into the container (see homelab-cron.nomad.hcl).
+	// API's Unix socket, used by internal/docker.HTTPClient.
 	DockerSock string
 }
 
