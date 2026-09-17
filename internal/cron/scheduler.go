@@ -23,12 +23,20 @@ type Scheduler struct {
 	cancel context.CancelFunc
 }
 
-// New builds a Scheduler with jobs registered against their schedules. m is
-// used to send the alert email for any job whose AlertingEnabled() returns
-// true after it runs. It returns an error if any job's Schedule() is not a
-// valid cron expression. Call Start to begin running jobs.
+const schedulerLocation = "Australia/Brisbane"
+
+// New builds a Scheduler with jobs registered against their schedules,
+// interpreted in schedulerLocation. m is used to send the alert email for
+// any job whose AlertingEnabled() returns true after it runs. It returns an
+// error if any job's Schedule() is not a valid cron expression, or if
+// schedulerLocation can't be loaded. Call Start to begin running jobs.
 func New(m mailer.Sender, jobs ...Job) (*Scheduler, error) {
-	c := robfigcron.New()
+	loc, err := time.LoadLocation(schedulerLocation)
+	if err != nil {
+		return nil, fmt.Errorf("load scheduler location %q: %w", schedulerLocation, err)
+	}
+
+	c := robfigcron.New(robfigcron.WithLocation(loc))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	for _, j := range jobs {

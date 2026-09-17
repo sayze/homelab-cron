@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"homelab-cron/internal/config"
 	"homelab-cron/internal/cron"
