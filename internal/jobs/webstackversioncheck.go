@@ -49,13 +49,41 @@ type WebstackVersionCheck struct {
 func NewWebstackVersionCheck(consulClient consul.Client) *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
-		{name: "Consul", currentVersion: "1.22.2", fetchLatest: hashiCorpLatest(client, "consul")},
-		{name: "Vault", currentVersion: "1.21.4", fetchLatest: hashiCorpLatest(client, "vault")},
-		{name: "Nomad", currentVersion: "1.11.3", fetchLatest: hashiCorpLatest(client, "nomad")},
-		{name: "Docker", currentVersion: "5:28.5.2-1~ubuntu.24.04~noble", fetchLatest: dockerLatest(client)},
-		{name: "Traefik", fetchCurrent: consulCurrent(consulClient, "traefik"), fetchLatest: githubLatestTag(client, "traefik", "traefik")},
-		{name: "PostgreSQL", fetchCurrent: consulCurrent(consulClient, "postgres"), fetchLatest: postgresLatestMajor(client)},
-		{name: "New Relic Infrastructure", fetchCurrent: consulCurrent(consulClient, "newrelic"), fetchLatest: githubLatestTag(client, "newrelic", "infrastructure-agent")},
+		{
+			name:           "Consul",
+			currentVersion: "1.22.2",
+			fetchLatest:    hashiCorpLatest(client, "consul"),
+		},
+		{
+			name:           "Vault",
+			currentVersion: "1.21.4",
+			fetchLatest:    hashiCorpLatest(client, "vault"),
+		},
+		{
+			name:           "Nomad",
+			currentVersion: "1.11.3",
+			fetchLatest:    hashiCorpLatest(client, "nomad"),
+		},
+		{
+			name:           "Docker",
+			currentVersion: "5:28.5.2-1~ubuntu.24.04~noble",
+			fetchLatest:    dockerLatest(client),
+		},
+		{
+			name:         "Traefik",
+			fetchCurrent: consulCurrent(consulClient, "traefik"),
+			fetchLatest:  githubLatestTag(client, "traefik", "traefik"),
+		},
+		{
+			name:         "PostgreSQL",
+			fetchCurrent: consulCurrent(consulClient, "postgres"),
+			fetchLatest:  postgresLatestMajor(client),
+		},
+		{
+			name:         "New Relic Infrastructure",
+			fetchCurrent: consulCurrent(consulClient, "newrelic"),
+			fetchLatest:  githubLatestTag(client, "newrelic", "infrastructure-agent"),
+		},
 	})
 }
 
