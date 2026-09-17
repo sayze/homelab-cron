@@ -207,11 +207,13 @@ filesystem, not the host's.
   `aws-sdk-go-v2`'s default config chain, not by this repo's own
   `internal/config`.
 - `CONSUL_ADDR` — Consul's HTTP API base URL, used by
-  `internal/consul.HTTPClient` (see above). Defaults to
-  `http://127.0.0.1:8500`, Consul's own default local-agent address, which
-  won't be reachable from inside this service's container unless Consul is
-  exposed to it — override to an address reachable from this container's
-  own network.
+  `internal/consul.HTTPClient` (see above). `internal/config`'s own default
+  is `http://127.0.0.1:8500` (Consul's default local-agent address, fine
+  for local dev where Consul typically runs on the same host as `go run`
+  or `docker compose`). In production, `homelab-cron.nomad.hcl` always sets
+  this explicitly via its `consul_addr` variable, since this task isn't on
+  the host network and can't reach `127.0.0.1:8500` — see that file for
+  how it resolves the right address per allocation.
 
 ## Docker
 
