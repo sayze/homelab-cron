@@ -93,19 +93,16 @@ repo variables/secrets.
   `homelab`'s `UPGRADE.md`. Traefik, PostgreSQL, and New Relic
   Infrastructure are already fixed: their `homelab` Nomad jobs register
   their image tag as `version` Consul service meta, and
-  `internal/consul.Client` reads it live (see `CLAUDE.md`). Vault is now
-  fixed too, via its own unauthenticated health endpoint rather than
-  Consul service meta: `internal/vault.Client.Version` reads `version`
-  off `GET /v1/sys/health`'s response body (a non-200 status there isn't
-  itself a failure — Vault's status varies with seal/standby state, but
-  the body is always populated). What's left is Consul, Nomad, and Docker,
-  which still use a hardcoded baseline:
-  - Consul (`GET /v1/agent/self`, `Config.Version`) is unauthenticated on
-    this stack (no Consul ACLs), and this job's Nomad task is already on
-    the host network (`homelab-cron.nomad.hcl`'s `network` block has
-    `mode = "host"`, same as `jobs/traefik.nomad.hcl`/`jobs/newrelic.nomad.hcl`),
-    so it can reach `127.0.0.1:8500` directly — same pattern as Vault's
-    fix above, just not yet implemented.
+  `internal/consul.Client` reads it live (see `CLAUDE.md`). Consul and
+  Vault are now fixed too, each via its own live endpoint rather than
+  Consul service meta: `consulAgentVersion` reads Consul's own
+  `GET /v1/agent/self`'s `Config.Version` directly, since Consul's own
+  version isn't service meta on itself; `internal/vault.Client.Version`
+  reads `version` off Vault's own unauthenticated `GET /v1/sys/health`
+  response body (a non-200 status there isn't itself a failure — Vault's
+  status varies with seal/standby state, but the body is always
+  populated). What's left is Nomad and Docker, which still use a
+  hardcoded baseline:
   - Nomad has ACLs enabled (`acl.enabled = true` in `nomad.hcl.j2`), so
     its `/v1/agent/self` needs a token. Would need a new read-only Nomad
     ACL policy/token provisioned via `homelab`'s Ansible (same pattern as

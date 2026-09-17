@@ -141,7 +141,7 @@ type or registry beyond passing the job into `cron.New(...)` in
   Infrastructure), and postgresql.org's published version list (PostgreSQL
   — its Docker tag is just the bare major version, e.g. `postgres:16`).
   Each `dependency`'s *current* version comes from one of three places.
-  Consul, Nomad, and Docker still use a hand-maintained pinned baseline
+  Nomad and Docker still use a hand-maintained pinned baseline
   (`dependency.currentVersion`, set in `NewWebstackVersionCheck`) — update
   these whenever `homelab` changes: Nomad from
   `provisioning/ansible/playbooks/provision.yml`'s `vars:` block
@@ -153,25 +153,27 @@ type or registry beyond passing the job into `cron.New(...)` in
   version *live* from Consul service meta (`dependency.fetchCurrent`, built
   by `consulCurrent` — see `internal/consul`), since their Nomad jobs
   (`jobs/{traefik,postgres,newrelic}.nomad.hcl` in `homelab`) register their
-  image tag as `version` in Consul service meta. Vault reads its current
-  version live too, but differently: `vaultCurrent` (`internal/vault`) hits
-  Vault's own unauthenticated `GET /v1/sys/health` and reads `version` off
-  the response body directly, rather than going through Consul service
-  meta — Vault's health endpoint responds with a non-200 status depending
-  on seal/standby state (e.g. 503 sealed, 429 standby), but the body is
-  populated regardless, so `internal/vault.HTTPClient` doesn't treat a
-  non-200 status itself as a failure. This is the pattern to extend to
-  Consul/Nomad/Docker next, per the plan `homelab`'s `UPGRADE.md`/README
-  Hygiene section describes for sourcing baselines live instead of
-  hand-maintaining them. This still doesn't reach the Docker daemon
-  directly, and latest-version checks still go out over public HTTPS to
-  upstream endpoints — the reason the Dockerfile carries `ca-certificates`
-  into the `scratch` image — but the task runs on the host network (see
-  `homelab-cron.nomad.hcl`'s `network { mode = "host" }`, the same pattern
-  `jobs/traefik.nomad.hcl` in `homelab` uses), so the Consul/Vault HTTP
-  APIs resolve at `127.0.0.1:8500`/`8200`, their own local-agent addresses,
-  same as `internal/config`'s own defaults; see `internal/consul` and
-  `internal/vault`.
+  image tag as `version` in Consul service meta. Consul and Vault instead
+  read their own current version live from their own endpoints, not
+  through Consul service meta: `consulAgentVersion` (`internal/consul`)
+  hits Consul's own `GET /v1/agent/self` and reads `Config.Version` off it
+  directly; `vaultCurrent` (`internal/vault`) hits Vault's own
+  unauthenticated `GET /v1/sys/health` and reads `version` off the
+  response body directly — Vault's health endpoint responds with a
+  non-200 status depending on seal/standby state (e.g. 503 sealed, 429
+  standby), but the body is populated regardless, so
+  `internal/vault.HTTPClient` doesn't treat a non-200 status itself as a
+  failure. This is the pattern to extend to Nomad/Docker next, per the
+  plan `homelab`'s `UPGRADE.md`/README Hygiene section describes for
+  sourcing baselines live instead of hand-maintaining them. This still
+  doesn't reach the Docker daemon directly, and latest-version checks
+  still go out over public HTTPS to upstream endpoints — the reason the
+  Dockerfile carries `ca-certificates` into the `scratch` image — but the
+  task runs on the host network (see `homelab-cron.nomad.hcl`'s `network {
+  mode = "host" }`, the same pattern `jobs/traefik.nomad.hcl` in `homelab`
+  uses), so the Consul/Vault HTTP APIs resolve at `127.0.0.1:8500`/`8200`,
+  their own local-agent addresses, same as `internal/config`'s own
+  defaults; see `internal/consul` and `internal/vault`.
   Worked example of injecting fetch behavior for both the current version
   (`dependency.fetchCurrent`) and the latest version
   (`dependency.fetchLatest`) for testability, instead of hitting real APIs
