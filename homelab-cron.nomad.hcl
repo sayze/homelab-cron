@@ -18,6 +18,11 @@ variable "aws_region" {
   default = "us-east-1"
 }
 
+variable "consul_addr" {
+  type    = string
+  default = "http://127.0.0.1:8500"
+}
+
 job "homelab-cron" {
   datacenters = ["hl"]
   type        = "service"
@@ -71,6 +76,14 @@ job "homelab-cron" {
         ALERT_EMAIL_FROM = var.alert_email_from
         ALERT_EMAIL_TO   = var.alert_email_to
         AWS_REGION       = var.aws_region
+
+        # Consul's HTTP API address, used by internal/consul.HTTPClient to
+        # read Traefik/PostgreSQL/New Relic Infrastructure's deployed
+        # version from Consul service meta. This task isn't on the host
+        # network (see the group's `network` block above), so the default
+        # of Consul's local-agent address only works if it's overridden to
+        # one reachable from this container's own network.
+        CONSUL_ADDR = var.consul_addr
       }
 
       # AWS SES credentials for job alert emails (internal/mailer). Read

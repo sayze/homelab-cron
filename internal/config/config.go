@@ -31,6 +31,14 @@ type Config struct {
 	// chain (see internal/mailer.NewSES) rather than duplicated here.
 	AlertEmailFrom string
 	AlertEmailTo   []string
+
+	// ConsulAddr is Consul's HTTP API base URL, used by
+	// internal/consul.HTTPClient to read a service's deployed version from
+	// Consul service meta (see internal/jobs.WebstackVersionCheck). Defaults
+	// to Consul's own default HTTP API address; override for a Consul
+	// server/agent reachable from this container over the network, since
+	// this service isn't on the host network — see homelab-cron.nomad.hcl.
+	ConsulAddr string
 }
 
 // Load reads homelab-cron's configuration from environment variables,
@@ -41,6 +49,7 @@ func Load() Config {
 		HostRoot:       getEnv("HOST_ROOT", "/host"),
 		AlertEmailFrom: os.Getenv("ALERT_EMAIL_FROM"),
 		AlertEmailTo:   getEnvList("ALERT_EMAIL_TO"),
+		ConsulAddr:     getEnv("CONSUL_ADDR", "http://127.0.0.1:8500"),
 	}
 }
 

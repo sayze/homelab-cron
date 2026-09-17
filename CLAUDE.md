@@ -22,10 +22,10 @@ process, not in response to HTTP requests.
   gets a chance to notice cancellation and finish cleanly before the
   process exits.
 - `internal/config/config.go` — env var loading (`ADDR`, `HOST_ROOT`,
-  `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`), plain `os.Getenv`/`os.Getenv` +
-  comma-split with defaults, no third-party config library. Deliberately
-  does *not* read AWS credentials/region — those go straight to the AWS
-  SDK's own env chain (see `internal/mailer`).
+  `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `CONSUL_ADDR`), plain
+  `os.Getenv`/`os.Getenv` + comma-split with defaults, no third-party config
+  library. Deliberately does *not* read AWS credentials/region — those go
+  straight to the AWS SDK's own env chain (see `internal/mailer`).
 - `internal/server/server.go` — chi router. Middleware: chi's default stack
   (`RequestID`, `Logger`, `Recoverer`). One route: `GET /health` → `200
   {"status":"ok"}`. No CORS, no auth — nothing here is meant to be called by
@@ -77,6 +77,22 @@ caller, driven by each job's `AlertingEnabled`/`EmailContent`.
   `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` aren't both set, so alerting jobs
   don't error out in local dev without AWS credentials.
 
+### Consul client (`internal/consul/`)
+
+`Client` is a one-method interface (`Version(ctx, service string) (string,
+error)`), read by `internal/jobs.WebstackVersionCheck` to look up a
+dependency's actually-deployed version live instead of a hand-maintained
+baseline (see the `webstackversioncheck.go` entry below). `HTTPClient` is
+the concrete implementation, backed by Consul's HTTP health API
+(`GET /v1/health/service/{name}?passing=true`); it reads the `version` key
+off the first passing instance's `Service.Meta` and errors if there's no
+passing instance or no `version` meta. `NewHTTPClient(addr, client)` takes
+Consul's HTTP API base URL — `main.go` passes `cfg.ConsulAddr`
+(env var `CONSUL_ADDR`) — and an `*http.Client`, same shape as the plain
+`*http.Client` injection `webstackversioncheck.go`'s own `fetchLatest`
+funcs use. Tests fake the `Client` interface directly rather than standing
+up a Consul server.
+
 ### Jobs (`internal/jobs/`)
 
 Each file is one `Job` implementation, independent of the others. Copy an
@@ -100,31 +116,41 @@ type or registry beyond passing the job into `cron.New(...)` in
   or conditionally alert.
 - `webstackversioncheck.go` — `WebstackVersionCheck`, runs weekly (Monday
   7am), checks Consul, Vault, Nomad, Docker, Traefik, PostgreSQL, and New
-  Relic Infrastructure versions pinned in the `homelab` repo against each
-  project's latest stable release, and alerts when any has fallen a major
-  version behind. Latest-version sources: HashiCorp's releases API
-  (Consul/Vault/Nomad), a project's own GitHub releases (Docker via
-  moby/moby, Traefik, New Relic Infrastructure), and postgresql.org's
-  published version list (PostgreSQL — its Docker tag is just the bare
-  major version, e.g. `postgres:16`). The pinned "current" versions are a
-  hand-maintained snapshot inside the job itself
-  (`NewWebstackVersionCheck`'s `dependency` list) — update them whenever
-  `homelab` changes: Vault/Nomad from `provisioning/ansible/playbooks/provision.yml`'s
-  `vars:` block specifically, **not** `provisioning/ansible/roles/{vault,nomad}/defaults/main.yml`
-  (those role defaults are stale and overridden by the playbook — see
-  `homelab`'s `UPGRADE.md`); Docker from `provisioning/ansible/roles/docker/defaults/main.yml`
-  (not overridden); Traefik/PostgreSQL/New Relic Infrastructure from
-  `jobs/*.nomad.hcl` image tags. See `homelab`'s `UPGRADE.md` and its
-  README's TODO/Hygiene section for the plan to source these live
-  instead. Deliberately does
-  not query the actually-running stack: this service isn't on the host
-  network and can't reach Consul/Vault/Nomad's local APIs (or the Docker
-  daemon) from inside its container, so it only compares baselines against
-  public upstream endpoints over outbound HTTPS — the reason the
-  Dockerfile carries `ca-certificates` into the `scratch` image. Worked
-  example of a job with no host filesystem access at all, and of injecting
-  fetch behavior (`dependency.fetchLatest`) for testability instead of
-  hitting real APIs in unit tests.
+  Relic Infrastructure versions against each project's latest stable
+  release, and alerts when any has fallen a major version behind.
+  Latest-version sources: HashiCorp's releases API (Consul/Vault/Nomad), a
+  project's own GitHub releases (Docker via moby/moby, Traefik, New Relic
+  Infrastructure), and postgresql.org's published version list (PostgreSQL
+  — its Docker tag is just the bare major version, e.g. `postgres:16`).
+  Each `dependency`'s *current* version comes from one of two places.
+  Consul, Vault, Nomad, and Docker use a hand-maintained pinned baseline
+  (`dependency.currentVersion`, set in `NewWebstackVersionCheck`) — update
+  these whenever `homelab` changes: Vault/Nomad from
+  `provisioning/ansible/playbooks/provision.yml`'s `vars:` block
+  specifically, **not**
+  `provisioning/ansible/roles/{vault,nomad}/defaults/main.yml` (those role
+  defaults are stale and overridden by the playbook — see `homelab`'s
+  `UPGRADE.md`); Docker from
+  `provisioning/ansible/roles/docker/defaults/main.yml` (not overridden).
+  Traefik, PostgreSQL, and New Relic Infrastructure instead read their
+  current version *live* from Consul (`dependency.fetchCurrent`, built by
+  `consulCurrent` — see `internal/consul`), since their Nomad jobs
+  (`jobs/{traefik,postgres,newrelic}.nomad.hcl` in `homelab`) register their
+  image tag as `version` in Consul service meta; this is the first slice of
+  the plan `homelab`'s `UPGRADE.md`/README Hygiene section describes for
+  sourcing baselines live instead of hand-maintaining them — extend the
+  same pattern to Vault/Nomad/Docker if/when their jobs register equivalent
+  meta. This still doesn't reach Consul/Vault/Nomad's own local APIs or the
+  Docker daemon directly (this service isn't on the host network), and
+  latest-version checks still go out over public HTTPS to upstream
+  endpoints — the reason the Dockerfile carries `ca-certificates` into the
+  `scratch` image — but the Consul HTTP API itself (`CONSUL_ADDR`) must be
+  reachable from this container's own network for the Consul-backed
+  dependencies to resolve; see `internal/consul` and `homelab-cron.nomad.hcl`.
+  Worked example of injecting fetch behavior for both the current version
+  (`dependency.fetchCurrent`) and the latest version
+  (`dependency.fetchLatest`) for testability, instead of hitting real APIs
+  in unit tests.
 
 ## Host filesystem access
 
@@ -180,6 +206,12 @@ filesystem, not the host's.
   if the above are set. Standard AWS SDK env vars, read directly by
   `aws-sdk-go-v2`'s default config chain, not by this repo's own
   `internal/config`.
+- `CONSUL_ADDR` — Consul's HTTP API base URL, used by
+  `internal/consul.HTTPClient` (see above). Defaults to
+  `http://127.0.0.1:8500`, Consul's own default local-agent address, which
+  won't be reachable from inside this service's container unless Consul is
+  exposed to it — override to an address reachable from this container's
+  own network.
 
 ## Docker
 

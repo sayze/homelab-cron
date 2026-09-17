@@ -10,15 +10,25 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"homelab-cron/internal/consul"
 )
 
 // dependency is one component of the homelab stack this job tracks: its
-// pinned version and how to fetch the latest stable release to compare it
-// against.
+// current version (or how to fetch it) and how to fetch the latest stable
+// release to compare it against.
 type dependency struct {
-	name           string
+	name string
+
+	// currentVersion is a hand-maintained pinned baseline, used when
+	// fetchCurrent is nil. Dependencies whose Nomad job registers its
+	// deployed version as Consul service meta use fetchCurrent instead, so
+	// the baseline can't drift out of sync with what's actually running —
+	// see consulCurrent.
 	currentVersion string
-	fetchLatest    func(ctx context.Context) (string, error)
+	fetchCurrent   func(ctx context.Context) (string, error)
+
+	fetchLatest func(ctx context.Context) (string, error)
 }
 
 // WebstackVersionCheck compares pinned versions of the homelab stack
@@ -36,16 +46,22 @@ type WebstackVersionCheck struct {
 // Engine), each image's own GitHub releases (Traefik, New Relic
 // Infrastructure), and postgresql.org's published version list (PostgreSQL,
 // whose Docker tag is just the bare major version).
-func NewWebstackVersionCheck() *WebstackVersionCheck {
+//
+// consulClient reads each dependency's actually-deployed version live from
+// Consul service meta where the corresponding Nomad job registers one
+// (Traefik, PostgreSQL, New Relic Infrastructure — see
+// jobs/{traefik,postgres,newrelic}.nomad.hcl in homelab), rather than the
+// hand-maintained pinned baselines the other dependencies still use.
+func NewWebstackVersionCheck(consulClient consul.Client) *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
 		{name: "Consul", currentVersion: "1.22.2", fetchLatest: hashiCorpLatest(client, "consul")},
 		{name: "Vault", currentVersion: "1.21.4", fetchLatest: hashiCorpLatest(client, "vault")},
 		{name: "Nomad", currentVersion: "1.11.3", fetchLatest: hashiCorpLatest(client, "nomad")},
 		{name: "Docker", currentVersion: "5:28.5.2-1~ubuntu.24.04~noble", fetchLatest: dockerLatest(client)},
-		{name: "Traefik", currentVersion: "3.6.1", fetchLatest: githubLatestTag(client, "traefik", "traefik")},
-		{name: "PostgreSQL", currentVersion: "16", fetchLatest: postgresLatestMajor(client)},
-		{name: "New Relic Infrastructure", currentVersion: "1.71.1", fetchLatest: githubLatestTag(client, "newrelic", "infrastructure-agent")},
+		{name: "Traefik", fetchCurrent: consulCurrent(consulClient, "traefik"), fetchLatest: githubLatestTag(client, "traefik", "traefik")},
+		{name: "PostgreSQL", fetchCurrent: consulCurrent(consulClient, "postgres"), fetchLatest: postgresLatestMajor(client)},
+		{name: "New Relic Infrastructure", fetchCurrent: consulCurrent(consulClient, "newrelic"), fetchLatest: githubLatestTag(client, "newrelic", "infrastructure-agent")},
 	})
 }
 
@@ -69,6 +85,17 @@ func (j *WebstackVersionCheck) Run(ctx context.Context) error {
 	var lines []string
 
 	for _, d := range j.deps {
+		current := d.currentVersion
+		if d.fetchCurrent != nil {
+			v, err := d.fetchCurrent(ctx)
+			if err != nil {
+				log.Printf("webstack-version-check: %s: failed to fetch current version: %v", d.name, err)
+				lines = append(lines, fmt.Sprintf("- %s: could not check current version (%v)", d.name, err))
+				continue
+			}
+			current = v
+		}
+
 		latest, err := d.fetchLatest(ctx)
 		if err != nil {
 			log.Printf("webstack-version-check: %s: failed to fetch latest version: %v", d.name, err)
@@ -76,9 +103,9 @@ func (j *WebstackVersionCheck) Run(ctx context.Context) error {
 			continue
 		}
 
-		currentMajor, err := majorVersion(d.currentVersion)
+		currentMajor, err := majorVersion(current)
 		if err != nil {
-			log.Printf("webstack-version-check: %s: bad pinned version %q: %v", d.name, d.currentVersion, err)
+			log.Printf("webstack-version-check: %s: bad current version %q: %v", d.name, current, err)
 			continue
 		}
 		latestMajor, err := majorVersion(latest)
@@ -88,7 +115,7 @@ func (j *WebstackVersionCheck) Run(ctx context.Context) error {
 		}
 
 		if latestMajor > currentMajor {
-			lines = append(lines, fmt.Sprintf("- %s: pinned %s is a major version behind latest stable %s", d.name, d.currentVersion, latest))
+			lines = append(lines, fmt.Sprintf("- %s: current %s is a major version behind latest stable %s", d.name, current, latest))
 		}
 	}
 
@@ -112,6 +139,17 @@ func (j *WebstackVersionCheck) EmailContent() string {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.message
+}
+
+// consulCurrent returns a fetchCurrent func that reads service's
+// actually-deployed version live from Consul, via consulClient — see
+// internal/consul — rather than a hand-maintained pinned baseline. Used for
+// dependencies whose Nomad job registers its image tag as "version" in
+// Consul service meta.
+func consulCurrent(consulClient consul.Client, service string) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		return consulClient.Version(ctx, service)
+	}
 }
 
 // hashiCorpLatest returns a fetchLatest func for a HashiCorp product,

@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"homelab-cron/internal/consul"
 )
 
 func TestWebstackVersionCheck_Run(t *testing.T) {
@@ -71,6 +73,29 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 			},
 			wantContent: true,
 			wantSubstr:  []string{"Nomad"},
+		},
+		{
+			name: "current version sourced from consul, major version behind",
+			deps: []dependency{
+				{name: "Traefik", fetchCurrent: fakeCurrent("3.6.1", nil), fetchLatest: fakeLatest("4.0.0", nil)},
+			},
+			wantContent: true,
+			wantSubstr:  []string{"Traefik", "3.6.1", "4.0.0"},
+		},
+		{
+			name: "current version sourced from consul, up to date",
+			deps: []dependency{
+				{name: "PostgreSQL", fetchCurrent: fakeCurrent("18", nil), fetchLatest: fakeLatest("18", nil)},
+			},
+			wantContent: false,
+		},
+		{
+			name: "consul fetch failure is reported, not fatal",
+			deps: []dependency{
+				{name: "New Relic Infrastructure", fetchCurrent: fakeCurrent("", errors.New(`consul: no healthy instance of service "newrelic" registered`)), fetchLatest: fakeLatest("1.80.3", nil)},
+			},
+			wantContent: true,
+			wantSubstr:  []string{"New Relic Infrastructure", "could not check current version", "no healthy instance"},
 		},
 	}
 
@@ -136,6 +161,50 @@ func TestMajorVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestConsulCurrent(t *testing.T) {
+	t.Run("returns the version consul reports for the service", func(t *testing.T) {
+		client := fakeConsulClient{"traefik": {version: "3.6.1"}}
+
+		got, err := consulCurrent(client, "traefik")(context.Background())
+
+		assert.NoError(t, err)
+		assert.Equal(t, "3.6.1", got)
+	})
+
+	t.Run("propagates a consul error", func(t *testing.T) {
+		client := fakeConsulClient{"newrelic": {err: errors.New("boom")}}
+
+		_, err := consulCurrent(client, "newrelic")(context.Background())
+
+		assert.ErrorContains(t, err, "boom")
+	})
+}
+
+// fakeCurrent returns a fetchCurrent func for use in dependency structs in
+// tests, mirroring fakeLatest below.
+func fakeCurrent(version string, err error) func(context.Context) (string, error) {
+	return func(context.Context) (string, error) {
+		return version, err
+	}
+}
+
+// fakeConsulClient is a consul.Client fake keyed by service name, used to
+// test consulCurrent without a real Consul server.
+type fakeConsulClient map[string]struct {
+	version string
+	err     error
+}
+
+func (f fakeConsulClient) Version(_ context.Context, service string) (string, error) {
+	entry, ok := f[service]
+	if !ok {
+		return "", errors.New("fakeConsulClient: no entry for " + service)
+	}
+	return entry.version, entry.err
+}
+
+var _ consul.Client = fakeConsulClient{}
 
 func fakeLatest(version string, err error) func(context.Context) (string, error) {
 	return func(context.Context) (string, error) {
