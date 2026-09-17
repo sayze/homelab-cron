@@ -18,6 +18,7 @@ func TestLoad(t *testing.T) {
 		wantAlertTo    []string
 		wantConsulAddr string
 		wantVaultAddr  string
+		wantDockerSock string
 	}{
 		{
 			name:           "defaults",
@@ -28,6 +29,7 @@ func TestLoad(t *testing.T) {
 			wantAlertTo:    nil,
 			wantConsulAddr: "http://127.0.0.1:8500",
 			wantVaultAddr:  "http://127.0.0.1:8200",
+			wantDockerSock: "/var/run/docker.sock",
 		},
 		{
 			name: "overrides",
@@ -38,6 +40,7 @@ func TestLoad(t *testing.T) {
 				"ALERT_EMAIL_TO":   "alerts@example.com, oncall@example.com",
 				"CONSUL_ADDR":      "http://consul.service.consul:8500",
 				"VAULT_ADDR":       "http://vault.service.consul:8200",
+				"DOCKER_SOCK":      "/tmp/docker.sock",
 			},
 			wantAddr:       ":9090",
 			wantHostRoot:   "/mnt/host",
@@ -45,6 +48,7 @@ func TestLoad(t *testing.T) {
 			wantAlertTo:    []string{"alerts@example.com", "oncall@example.com"},
 			wantConsulAddr: "http://consul.service.consul:8500",
 			wantVaultAddr:  "http://vault.service.consul:8200",
+			wantDockerSock: "/tmp/docker.sock",
 		},
 	}
 
@@ -62,6 +66,7 @@ func TestLoad(t *testing.T) {
 			assert.Equal(t, tt.wantAlertTo, cfg.AlertEmailTo)
 			assert.Equal(t, tt.wantConsulAddr, cfg.ConsulAddr)
 			assert.Equal(t, tt.wantVaultAddr, cfg.VaultAddr)
+			assert.Equal(t, tt.wantDockerSock, cfg.DockerSock)
 		})
 	}
 }

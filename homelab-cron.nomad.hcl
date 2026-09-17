@@ -61,15 +61,34 @@ job "homelab-cron" {
         image        = var.image
         network_mode = "host"
 
-        # Read-only bind mount of the entire host filesystem.
         volumes = [
+          # Read-only bind mount of the entire host filesystem.
           "/:/host:ro,rslave",
+
+          # The Docker Engine API's Unix socket, read by internal/docker so
+          # WebstackVersionCheck can read the daemon's own deployed version
+          # live instead of a hand-maintained baseline (see
+          # internal/jobs/webstackversioncheck.go). NOTE: unlike the host
+          # root mount above, ":ro" here only stops the container from
+          # replacing/deleting the socket file itself — a process connected
+          # to it still gets the full Docker Engine API, which is
+          # root-equivalent on this host (e.g. it can create a privileged
+          # container that mounts the host filesystem read-write). This is
+          # the deliberate, explicit exception to this service's
+          # read-only-host design that CLAUDE.md's "Host filesystem access"
+          # section calls for; WebstackVersionCheck only ever calls
+          # GET /version through it.
+          "/var/run/docker.sock:/var/run/docker.sock",
         ]
       }
 
       env {
         ADDR      = ":8080"
         HOST_ROOT = "/host"
+
+        # DOCKER_SOCK is deliberately unset here: internal/config's own
+        # default ("/var/run/docker.sock") already matches the volume mount
+        # above.
 
         ALERT_EMAIL_FROM = var.alert_email_from
         ALERT_EMAIL_TO   = var.alert_email_to

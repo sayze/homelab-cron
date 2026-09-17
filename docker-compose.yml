@@ -13,5 +13,12 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_REGION: ${AWS_REGION:-}
+      DOCKER_SOCK: ${DOCKER_SOCK:-/var/run/docker.sock}
     volumes:
       - ${HOST_ROOT_HOST_PATH:-/}:${HOST_ROOT:-/host}:ro
+      # Grants this container the full Docker Engine API of the host
+      # running docker compose — root-equivalent access, same caveat as
+      # homelab-cron.nomad.hcl's volume mount. Only needed to exercise
+      # WebstackVersionCheck's Docker version check locally; comment out if
+      # you'd rather not expose it in dev.
+      - ${DOCKER_SOCK_HOST_PATH:-/var/run/docker.sock}:${DOCKER_SOCK:-/var/run/docker.sock}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"homelab-cron/internal/consul"
+	"homelab-cron/internal/docker"
 	"homelab-cron/internal/vault"
 )
 
@@ -25,8 +26,8 @@ type dependency struct {
 	// fetchCurrent is nil. Dependencies that can report their own deployed
 	// version live use fetchCurrent instead, so the baseline can't drift
 	// out of sync with what's actually running — see consulCurrent (via
-	// Consul service meta) and vaultCurrent (via Vault's own health
-	// endpoint).
+	// Consul service meta), vaultCurrent (via Vault's own health endpoint),
+	// and dockerCurrent (via the local Docker daemon's own Engine API).
 	currentVersion string
 	fetchCurrent   func(ctx context.Context) (string, error)
 
@@ -48,7 +49,7 @@ type WebstackVersionCheck struct {
 // Engine), each image's own GitHub releases (Traefik, New Relic
 // Infrastructure), and postgresql.org's published version list (PostgreSQL,
 // whose Docker tag is just the bare major version).
-func NewWebstackVersionCheck(consulClient consul.Client, vaultClient vault.Client) *WebstackVersionCheck {
+func NewWebstackVersionCheck(consulClient consul.Client, vaultClient vault.Client, dockerClient docker.Client) *WebstackVersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
 	return newWebstackVersionCheck([]dependency{
 		{
@@ -67,9 +68,9 @@ func NewWebstackVersionCheck(consulClient consul.Client, vaultClient vault.Clien
 			fetchLatest:    hashiCorpLatest(client, "nomad"),
 		},
 		{
-			name:           "Docker",
-			currentVersion: "5:28.5.2-1~ubuntu.24.04~noble",
-			fetchLatest:    dockerLatest(client),
+			name:         "Docker",
+			fetchCurrent: dockerCurrent(dockerClient),
+			fetchLatest:  dockerLatest(client),
 		},
 		{
 			name:         "Traefik",
@@ -189,6 +190,15 @@ func consulAgentVersion(consulClient consul.Client) func(context.Context) (strin
 func vaultCurrent(vaultClient vault.Client) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		return vaultClient.Version(ctx)
+	}
+}
+
+// dockerCurrent returns a fetchCurrent func that reads the local Docker
+// daemon's own deployed version live from its Engine API, via
+// dockerClient — see internal/docker.
+func dockerCurrent(dockerClient docker.Client) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		return dockerClient.Version(ctx)
 	}
 }
 
