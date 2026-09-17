@@ -35,6 +35,16 @@ type Config struct {
 	ConsulAddr string
 	VaultAddr  string
 
+	// NomadAddr is Nomad's HTTP API base URL, used by
+	// internal/nomad.HTTPClient. NomadToken is the ACL token sent with every
+	// request as Nomad's X-Nomad-Token header — unlike ConsulAddr/VaultAddr,
+	// Nomad's own agent-self endpoint requires one once ACLs are enabled.
+	// NomadToken has no default: it's a secret, rendered into the task's env
+	// from Vault (see homelab-cron.nomad.hcl's template block), not
+	// hand-configured like the other addrs.
+	NomadAddr  string
+	NomadToken string
+
 	// DockerSock is the path (inside the container) to the Docker Engine
 	// API's Unix socket, used by internal/docker.HTTPClient.
 	DockerSock string
@@ -50,6 +60,8 @@ func Load() Config {
 		AlertEmailTo:   getEnvList("ALERT_EMAIL_TO"),
 		ConsulAddr:     getEnv("CONSUL_ADDR", "http://127.0.0.1:8500"),
 		VaultAddr:      getEnv("VAULT_ADDR", "http://127.0.0.1:8200"),
+		NomadAddr:      getEnv("NOMAD_ADDR", "http://127.0.0.1:4646"),
+		NomadToken:     os.Getenv("NOMAD_TOKEN"),
 		DockerSock:     getEnv("DOCKER_SOCK", "/var/run/docker.sock"),
 	}
 }

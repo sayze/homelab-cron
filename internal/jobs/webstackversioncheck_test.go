@@ -11,6 +11,7 @@ import (
 
 	"homelab-cron/internal/consul"
 	"homelab-cron/internal/docker"
+	"homelab-cron/internal/nomad"
 	"homelab-cron/internal/vault"
 )
 
@@ -249,6 +250,38 @@ func (f fakeVaultClient) Version(context.Context) (string, error) {
 }
 
 var _ vault.Client = fakeVaultClient{}
+
+// fakeNomadClient is a nomad.Client fake, used to test nomadCurrent without
+// a real Nomad agent.
+type fakeNomadClient struct {
+	version string
+	err     error
+}
+
+func (f fakeNomadClient) Version(context.Context) (string, error) {
+	return f.version, f.err
+}
+
+var _ nomad.Client = fakeNomadClient{}
+
+func TestNomadCurrent(t *testing.T) {
+	t.Run("returns nomad's own agent version", func(t *testing.T) {
+		client := fakeNomadClient{version: "1.11.3"}
+
+		got, err := nomadCurrent(client)(context.Background())
+
+		assert.NoError(t, err)
+		assert.Equal(t, "1.11.3", got)
+	})
+
+	t.Run("propagates a nomad error", func(t *testing.T) {
+		client := fakeNomadClient{err: errors.New("boom")}
+
+		_, err := nomadCurrent(client)(context.Background())
+
+		assert.ErrorContains(t, err, "boom")
+	})
+}
 
 // fakeDockerClient is a docker.Client fake, used to test dockerCurrent
 // without a real Docker daemon.

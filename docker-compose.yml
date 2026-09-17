@@ -13,6 +13,7 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_REGION: ${AWS_REGION:-}
+      NOMAD_TOKEN: ${NOMAD_TOKEN:-}
       DOCKER_SOCK: ${DOCKER_SOCK:-/var/run/docker.sock}
     volumes:
       - ${HOST_ROOT_HOST_PATH:-/}:${HOST_ROOT:-/host}:ro

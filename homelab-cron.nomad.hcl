@@ -84,14 +84,18 @@ job "homelab-cron" {
         ALERT_EMAIL_TO   = var.alert_email_to
         AWS_REGION       = var.aws_region
 
-        # CONSUL_ADDR/VAULT_ADDR are deliberately unset here: on the host
-        # network, internal/config's own defaults (http://127.0.0.1:8500
-        # and :8200, Consul's and Vault's own local-agent addresses)
-        # already resolve correctly, same as traefik.nomad.hcl's
+        # CONSUL_ADDR/VAULT_ADDR/NOMAD_ADDR are deliberately unset here: on
+        # the host network, internal/config's own defaults
+        # (http://127.0.0.1:8500, :8200, and :4646, Consul's, Vault's, and
+        # Nomad's own local-agent addresses) already resolve correctly,
+        # same as traefik.nomad.hcl's
         # --providers.consulcatalog.endpoint.address.
       }
 
-      # AWS SES credentials for job alert emails (internal/mailer). Read
+      # AWS SES credentials for job alert emails (internal/mailer), and the
+      # ACL token internal/nomad.HTTPClient sends as Nomad's X-Nomad-Token
+      # header to read Nomad's own deployed version
+      # (internal/jobs.WebstackVersionCheck). AWS credentials are read
       # directly by the AWS SDK's own env chain, not by this service's own
       # config — see internal/mailer/ses.go and internal/config/config.go.
       template {
@@ -99,6 +103,7 @@ job "homelab-cron" {
           {{ with secret "secret/data/homelab/homelab-cron" }}
           AWS_ACCESS_KEY_ID="{{ .Data.data.aws_access_key_id }}"
           AWS_SECRET_ACCESS_KEY="{{ .Data.data.aws_secret_access_key }}"
+          NOMAD_TOKEN="{{ .Data.data.nomad_token }}"
           {{ end }}
         EOF
         destination = "secrets/env"

@@ -1,0 +1,118 @@
+// Package nomad is a minimal read-only client for Nomad's HTTP API.
+// internal/jobs.WebstackVersionCheck uses it to read Nomad's own
+// actually-deployed version.
+package nomad
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// maxAttempts and retryDelay bound Version's retries against transient
+// Nomad/network failures: up to 3 attempts, 1s apart. retryDelay is a var
+// so tests can shrink it.
+const maxAttempts = 3
+
+var retryDelay = time.Second
+
+// Client reads Nomad's own deployed version. HTTPClient is the concrete
+// implementation, backed by Nomad's HTTP API; tests fake this interface
+// directly rather than standing up a Nomad agent.
+type Client interface {
+	// Version returns this Nomad agent's own version, read from the
+	// "version" key of GET /v1/agent/self's Stats.Nomad map.
+	Version(ctx context.Context) (string, error)
+}
+
+// HTTPClient is a Client backed by Nomad's HTTP agent API
+// (https://developer.hashicorp.com/nomad/api-docs/agent#read-agent-configuration).
+// Unlike internal/consul and internal/vault's equivalent endpoints, Nomad's
+// requires an ACL token with at least agent:read once ACLs are enabled —
+// token is homelab-cron's own NOMAD_TOKEN config, rendered into the task
+// from Vault's secret/data/homelab/homelab-cron#nomad_token (see
+// homelab-cron.nomad.hcl's template block).
+type HTTPClient struct {
+	addr   string
+	token  string
+	client *http.Client
+}
+
+// NewHTTPClient builds an HTTPClient against Nomad's HTTP API at addr (e.g.
+// "http://127.0.0.1:4646" — homelab-cron's own NOMAD_ADDR config),
+// authenticating every request with token (homelab-cron's own NOMAD_TOKEN
+// config) via Nomad's X-Nomad-Token header.
+func NewHTTPClient(addr, token string, client *http.Client) *HTTPClient {
+	return &HTTPClient{addr: strings.TrimRight(addr, "/"), token: token, client: client}
+}
+
+// Version implements Client by querying Nomad's own /v1/agent/self endpoint
+// and reading Stats.Nomad.Version off the response, retrying up to
+// maxAttempts times on failure.
+func (c *HTTPClient) Version(ctx context.Context) (string, error) {
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		var version string
+		if version, err = c.version(ctx); err == nil {
+			return version, nil
+		}
+		if attempt == maxAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(retryDelay):
+		}
+	}
+	return "", fmt.Errorf("nomad: query agent self failed after %d attempts: %w", maxAttempts, err)
+}
+
+// agentSelfResponse is the subset of Nomad's /v1/agent/self response this
+// package needs. Nomad reports its own version under stats.nomad.version,
+// unlike Consul's equivalent endpoint which reports it under config.Version.
+type agentSelfResponse struct {
+	Stats struct {
+		Nomad struct {
+			Version string `json:"version"`
+		} `json:"nomad"`
+	} `json:"stats"`
+}
+
+func (c *HTTPClient) version(ctx context.Context) (string, error) {
+	url := fmt.Sprintf("%s/v1/agent/self", c.addr)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("nomad: build request for agent self: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Nomad-Token", c.token)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("nomad: query agent self: %w", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Printf("nomad: closing response body for agent self: %v", cerr)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("nomad: unexpected status %d querying agent self", resp.StatusCode)
+	}
+
+	var body agentSelfResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("nomad: decode agent self response: %w", err)
+	}
+	if body.Stats.Nomad.Version == "" {
+		return "", fmt.Errorf("nomad: agent self response has no stats.nomad.version")
+	}
+	return body.Stats.Nomad.Version, nil
+}
