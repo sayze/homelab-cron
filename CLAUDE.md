@@ -110,11 +110,14 @@ caller, driven by each job's `AlertingEnabled`/`EmailContent`.
   `from`/`to` are this service's own `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`.
   `from` must be an SES-verified sender address.
 - `noop.go` — `Noop`, logs instead of sending.
-- `factory.go` — `New(ctx, cfg)` builds the `Sender` both `cmd/api/main.go`
-  and `cmd/cron/main.go` use: `SES` if `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`
-  are both set, otherwise `Noop`, so alerting jobs don't error out in local
-  dev without AWS credentials. Both binaries call this instead of each
-  duplicating the same branch.
+- `factory.go` — `Config` (`From`/`To`, this package's own small config,
+  not `internal/config.Config` — `mailer` only needs these two fields, so
+  it doesn't depend on the whole service's config) and `New(ctx, cfg)`,
+  which builds the `Sender` both `cmd/api/main.go` and `cmd/cron/main.go`
+  use, each passing `mailer.Config{From: cfg.AlertEmailFrom, To:
+  cfg.AlertEmailTo}`: `SES` if both fields are set, otherwise `Noop`, so
+  alerting jobs don't error out in local dev without AWS credentials. Both
+  binaries call this instead of each duplicating the same branch.
 
 ### Consul client (`internal/consul/`)
 

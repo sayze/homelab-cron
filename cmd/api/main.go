@@ -27,7 +27,7 @@ import (
 func main() {
 	cfg := config.Load()
 
-	m, err := mailer.New(context.Background(), cfg)
+	m, err := mailer.New(context.Background(), mailer.Config{From: cfg.AlertEmailFrom, To: cfg.AlertEmailTo})
 	if err != nil {
 		log.Fatalf("failed to build mailer: %v", err)
 	}
