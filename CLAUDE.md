@@ -445,7 +445,9 @@ from the `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` repo variables (not
 secrets — these are non-sensitive identifiers; the actual AWS credentials
 come from Vault via `homelab-cron.nomad.hcl`'s `template` block, not CI).
 `aws_region` is deliberately left unpassed so it keeps the Nomad file's
-own `us-east-1` default rather than being overridden with an empty string
+own `ap-southeast-2` default (matching the `homelab` repo's
+`terraform/ses` module, which the `homelab-cron` IAM user's SES send
+policy is scoped to) rather than being overridden with an empty string
 if the repo variable were ever unset — override it directly in the Nomad
 file (or via a manual `-var`) if you need a different region — same shape
 as `qotd-api`'s deploy workflow. Requires `REGISTRY_USER`/`NOMAD_ADDR`/
