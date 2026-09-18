@@ -38,9 +38,24 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 			wantSubstr:  []string{"Consul", "1.22.2", "2.0.4"},
 		},
 		{
-			name: "minor/patch behind is not alerted",
+			name: "minor/patch behind under the threshold is not alerted",
 			deps: []dependency{
 				{name: "Nomad", fetchCurrent: fakeCurrent("1.8.4", nil), fetchLatest: fakeLatest("1.9.0", nil)},
+			},
+			wantContent: false,
+		},
+		{
+			name: "minor version behind by exactly the threshold is alerted",
+			deps: []dependency{
+				{name: "Nomad", fetchCurrent: fakeCurrent("1.34.1", nil), fetchLatest: fakeLatest("1.39.0", nil)},
+			},
+			wantContent: true,
+			wantSubstr:  []string{"Nomad", "1.34.1", "1.39.0"},
+		},
+		{
+			name: "minor version behind by one less than the threshold is not alerted",
+			deps: []dependency{
+				{name: "Nomad", fetchCurrent: fakeCurrent("1.34.1", nil), fetchLatest: fakeLatest("1.38.0", nil)},
 			},
 			wantContent: false,
 		},
@@ -152,31 +167,34 @@ func TestWebstackVersionCheck_Run_DoesNotLeakPreviousAlert(t *testing.T) {
 	assert.Empty(t, job.EmailContent())
 }
 
-func TestMajorVersion(t *testing.T) {
+func TestParseVersion(t *testing.T) {
 	tests := []struct {
-		in      string
-		want    int
-		wantErr bool
+		in        string
+		wantMajor int
+		wantMinor int
+		wantErr   bool
 	}{
-		{in: "1.22.2", want: 1},
-		{in: "2.0.4", want: 2},
-		{in: "v29.8.1", want: 29},
-		{in: "5:28.5.2-1~ubuntu.24.04~noble", want: 28},
-		{in: "16", want: 16},
-		{in: "18", want: 18},
+		{in: "1.22.2", wantMajor: 1, wantMinor: 22},
+		{in: "2.0.4", wantMajor: 2, wantMinor: 0},
+		{in: "v29.8.1", wantMajor: 29, wantMinor: 8},
+		{in: "5:28.5.2-1~ubuntu.24.04~noble", wantMajor: 28, wantMinor: 5},
+		{in: "16", wantMajor: 16, wantMinor: 0},
+		{in: "18", wantMajor: 18, wantMinor: 0},
 		{in: "not-a-version", wantErr: true},
+		{in: "1.not-a-number", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			got, err := majorVersion(tt.in)
+			gotMajor, gotMinor, err := parseVersion(tt.in)
 
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantMajor, gotMajor)
+			assert.Equal(t, tt.wantMinor, gotMinor)
 		})
 	}
 }
