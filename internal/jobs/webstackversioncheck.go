@@ -241,9 +241,25 @@ func hashiCorpLatest(client *http.Client, product string) func(context.Context) 
 }
 
 // dockerLatest returns a fetchLatest func for Docker Engine, backed by
-// moby/moby's latest GitHub release tag (e.g. "v29.8.1").
+// moby/moby's latest GitHub release tag.
 func dockerLatest(client *http.Client) func(context.Context) (string, error) {
-	return githubLatestTag(client, "moby", "moby")
+	fetchTag := githubLatestTag(client, "moby", "moby")
+	return func(ctx context.Context) (string, error) {
+		tag, err := fetchTag(ctx)
+		if err != nil {
+			return "", err
+		}
+		return dockerTagVersion(tag), nil
+	}
+}
+
+// dockerTagVersion strips the "docker-" prefix moby/moby puts on Docker
+// Engine's own release tags (e.g. "docker-v29.8.1"), distinguishing them
+// from that repo's other release trains published from the same repo
+// (e.g. "client/v0.6.0", "api/v1.56.0"), so majorVersion sees a plain
+// "vX.Y.Z" tag, same shape as Traefik/New Relic's tags.
+func dockerTagVersion(tag string) string {
+	return strings.TrimPrefix(tag, "docker-")
 }
 
 // githubLatestTag returns a fetchLatest func backed by a GitHub repo's

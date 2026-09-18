@@ -181,6 +181,22 @@ func TestMajorVersion(t *testing.T) {
 	}
 }
 
+func TestDockerTagVersion(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "docker-v29.8.1", want: "v29.8.1"},
+		{in: "v29.8.1", want: "v29.8.1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			assert.Equal(t, tt.want, dockerTagVersion(tt.in))
+		})
+	}
+}
+
 func TestConsulCurrent(t *testing.T) {
 	t.Run("returns the version consul reports for the service", func(t *testing.T) {
 		client := fakeConsulClient{"traefik": {version: "3.6.1"}}

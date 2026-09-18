@@ -161,8 +161,8 @@ by `internal/jobs.WebstackVersionCheck` to look up Nomad's own
 actually-deployed version live instead of a hand-maintained baseline (see
 the `webstackversioncheck.go` entry below). `HTTPClient` is the concrete
 implementation, backed by Nomad's own agent-self endpoint (`GET
-/v1/agent/self`); it reads the `version` key off the response body's
-`stats.nomad` map, retrying up to 3 times (1s apart) on failure — same
+/v1/agent/self`); it reads the `Version` key off the response body's
+`config` object, retrying up to 3 times (1s apart) on failure — same
 retry shape as `internal/consul` and `internal/vault`. Unlike those two's
 equivalent endpoints, Nomad's requires an ACL token once ACLs are
 enabled — `NewHTTPClient(addr, token, client)` takes Nomad's HTTP API base
@@ -228,6 +228,10 @@ actually registers the job under.
   project's own GitHub releases (Docker via moby/moby, Traefik, New Relic
   Infrastructure), and postgresql.org's published version list (PostgreSQL
   — its Docker tag is just the bare major version, e.g. `postgres:16`).
+  `dockerLatest` strips a `docker-` prefix off moby/moby's release tag
+  before handing it to `majorVersion` — that repo tags Docker Engine's own
+  releases `docker-vX.Y.Z`, distinct from its other release trains
+  published from the same repo (`client/vX.Y.Z`, `api/vX.Y.Z`).
   Each `dependency`'s *current* version comes from one of two places now
   that Nomad has joined Consul/Vault/Docker in reading its own live —
   there's no hand-maintained pinned baseline left in this job at all.
@@ -248,7 +252,9 @@ actually registers the job under.
   failure; `nomadCurrent` (`internal/nomad`) hits Nomad's own `GET
   /v1/agent/self` (unlike Consul's identically-named endpoint, this one
   requires an ACL token once ACLs are enabled — see `internal/nomad`) and
-  reads `stats.nomad.version` off it directly; `dockerCurrent`
+  reads `config.Version` off it directly, same shape as Consul's
+  `Config.Version`, since Nomad's `stats.nomad` map has no version field of
+  its own; `dockerCurrent`
   (`internal/docker`) hits the local Docker daemon's own Engine API `GET
   /version` over its Unix socket and reads `Version` off the response body
   directly. Latest-version checks still go out over public HTTPS to

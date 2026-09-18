@@ -30,14 +30,14 @@ func TestHTTPClient_Version(t *testing.T) {
 		{
 			name:        "agent self with nomad version",
 			respStatus:  http.StatusOK,
-			respBody:    map[string]any{"stats": map[string]any{"nomad": map[string]any{"version": "1.11.3"}}},
+			respBody:    map[string]any{"config": map[string]any{"Version": "1.11.3"}},
 			wantVersion: "1.11.3",
 		},
 		{
-			name:       "stats missing version",
+			name:       "config missing version",
 			respStatus: http.StatusOK,
-			respBody:   map[string]any{"stats": map[string]any{"nomad": map[string]any{}}},
-			wantErr:    "agent self response has no stats.nomad.version",
+			respBody:   map[string]any{"config": map[string]any{}},
+			wantErr:    "agent self response has no config.Version",
 		},
 		{
 			name:       "non-200 status",
@@ -77,7 +77,7 @@ func TestHTTPClient_Version_SendsToken(t *testing.T) {
 	var gotToken string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotToken = r.Header.Get("X-Nomad-Token")
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"stats": map[string]any{"nomad": map[string]any{"version": "1.11.3"}}}))
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"config": map[string]any{"Version": "1.11.3"}}))
 	}))
 	defer srv.Close()
 
@@ -96,7 +96,7 @@ func TestHTTPClient_Version_RetriesOnFailure(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"stats": map[string]any{"nomad": map[string]any{"version": "1.11.3"}}}))
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"config": map[string]any{"Version": "1.11.3"}}))
 	}))
 	defer srv.Close()
 
@@ -130,7 +130,7 @@ func TestNewHTTPClient_TrimsTrailingSlash(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"stats": map[string]any{"nomad": map[string]any{"version": "1.11.3"}}}))
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"config": map[string]any{"Version": "1.11.3"}}))
 	}))
 	defer srv.Close()
 
