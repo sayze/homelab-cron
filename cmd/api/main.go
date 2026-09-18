@@ -1,5 +1,7 @@
-// Command api is the entrypoint for homelab-cron: it schedules and runs
-// the service's cron jobs and serves a health check for Nomad/Consul.
+// Command api is homelab-cron's HTTP entrypoint: it serves a single
+// /health route, used only for Nomad/Consul's own health check. The
+// service's actual work — running cron jobs — happens in the separate
+// cmd/cron entrypoint; this process does none of that.
 package main
 
 import (
@@ -8,45 +10,15 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
-	_ "time/tzdata"
 
 	"homelab-cron/internal/config"
-	"homelab-cron/internal/consul"
-	"homelab-cron/internal/cron"
-	"homelab-cron/internal/docker"
-	"homelab-cron/internal/jobs"
-	"homelab-cron/internal/mailer"
-	"homelab-cron/internal/nomad"
 	"homelab-cron/internal/server"
-	"homelab-cron/internal/vault"
 )
 
 func main() {
 	cfg := config.Load()
-
-	m, err := newMailer(cfg)
-	if err != nil {
-		log.Fatalf("failed to build mailer: %v", err)
-	}
-
-	consulClient, vaultClient, nomadClient, dockerClient := consul.NewHTTPClient(cfg.ConsulAddr, &http.Client{Timeout: 10 * time.Second}),
-		vault.NewHTTPClient(cfg.VaultAddr, &http.Client{Timeout: 10 * time.Second}),
-		nomad.NewHTTPClient(cfg.NomadAddr, cfg.NomadToken, &http.Client{Timeout: 10 * time.Second}),
-		docker.NewHTTPClient(cfg.DockerSock)
-
-	scheduler, err := cron.New(
-		m,
-		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
-		jobs.NewWebstackVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
-	)
-	if err != nil {
-		log.Fatalf("failed to build scheduler: %v", err)
-	}
-	scheduler.Start()
-	defer scheduler.Stop()
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -58,7 +30,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Printf("homelab-cron listening on %s", cfg.Addr)
+		log.Printf("homelab-cron api listening on %s", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("http server: %v", err)
 		}
@@ -72,16 +44,4 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("http server shutdown: %v", err)
 	}
-}
-
-// newMailer builds the mailer used to send alerting jobs' emails. If
-// ALERT_EMAIL_FROM/ALERT_EMAIL_TO aren't both set, alerting isn't
-// configured and it returns a mailer.Noop that logs instead of sending —
-// this keeps local dev (no AWS credentials) working without error.
-func newMailer(cfg config.Config) (mailer.Sender, error) {
-	if cfg.AlertEmailFrom == "" || len(cfg.AlertEmailTo) == 0 {
-		log.Println("mailer: ALERT_EMAIL_FROM/ALERT_EMAIL_TO not set, alert emails will only be logged")
-		return mailer.Noop{}, nil
-	}
-	return mailer.NewSES(context.Background(), cfg.AlertEmailFrom, cfg.AlertEmailTo)
 }

@@ -18,7 +18,7 @@ unit:
 
 build:
 	@echo "Building cmd binaries..."
-	go build -o bin/ ./cmd/api
+	go build -o bin/ ./cmd/...
 
 clean-build:
 	@echo "Removing cmd binaries..."

@@ -12,15 +12,30 @@ process, not in response to HTTP requests.
 
 ## Architecture (cmd pattern)
 
-- `cmd/api/main.go` — entrypoint/composition root. Loads `config.Load()`,
-  builds a `cron.Scheduler` from the jobs in `internal/jobs`, starts it,
-  builds the router via `server.New()`, starts `http.ListenAndServe` on
-  `cfg.Addr`. Listens for `SIGINT`/`SIGTERM`: on signal, shuts the HTTP
-  server down first (`srv.Shutdown`, 10s timeout), then stops the scheduler
-  (deferred `scheduler.Stop()`), which cancels any in-flight job's context
-  and blocks until it returns — so a job mid-read of the host filesystem
-  gets a chance to notice cancellation and finish cleanly before the
-  process exits.
+`api` and `cron` are two independent entrypoints/composition roots, built
+as two separate binaries (see **Docker** below) and deployed as two
+separate Nomad tasks (see **Deployment**) — there is no longer one process
+that does both. Each loads its own `config.Load()` and only reads the env
+vars it actually needs; unused ones are simply ignored (`config.Load()`
+itself doesn't know or care which binary is calling it).
+
+- `cmd/api/main.go` — entrypoint for the `/health` HTTP server only. Loads
+  `config.Load()`, builds the router via `server.New()`, starts
+  `http.ListenAndServe` on `cfg.Addr`. Listens for `SIGINT`/`SIGTERM`: on
+  signal, shuts the HTTP server down (`srv.Shutdown`, 10s timeout). Does
+  not build a scheduler or run any jobs — it has no dependency on
+  `internal/cron`, `internal/jobs`, `internal/mailer`, or any of the
+  version-check clients (`internal/consul`, `internal/vault`,
+  `internal/nomad`, `internal/docker`).
+- `cmd/cron/main.go` — entrypoint for the scheduler. Loads `config.Load()`,
+  builds the `internal/consul`/`internal/vault`/`internal/nomad`/
+  `internal/docker` clients, builds a `cron.Scheduler` from the jobs in
+  `internal/jobs`, starts it. Listens for `SIGINT`/`SIGTERM`: on signal,
+  stops the scheduler (deferred `scheduler.Stop()`), which cancels any
+  in-flight job's context and blocks until it returns — so a job mid-read
+  of the host filesystem gets a chance to notice cancellation and finish
+  cleanly before the process exits. Has no HTTP server of its own — it
+  never imports `internal/server`.
 - `internal/config/config.go` — env var loading (`ADDR`, `HOST_ROOT`,
   `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `CONSUL_ADDR`, `VAULT_ADDR`), plain
   `os.Getenv`/`os.Getenv` + comma-split with defaults, no third-party config
@@ -73,7 +88,7 @@ caller, driven by each job's `AlertingEnabled`/`EmailContent`.
   requirement that credentials/identifiers be propagated through env vars.
   `from`/`to` are this service's own `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`.
   `from` must be an SES-verified sender address.
-- `noop.go` — `Noop`, logs instead of sending. `main.go` wires this in when
+- `noop.go` — `Noop`, logs instead of sending. `cmd/cron/main.go` wires this in when
   `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` aren't both set, so alerting jobs
   don't error out in local dev without AWS credentials.
 
@@ -88,7 +103,7 @@ the concrete implementation, backed by Consul's HTTP health API
 off the first passing instance's `Service.Meta`, retrying up to 3 times
 (1s apart) on failure, and errors if there's no passing instance or no
 `version` meta. `NewHTTPClient(addr, client)` takes
-Consul's HTTP API base URL — `main.go` passes `cfg.ConsulAddr`
+Consul's HTTP API base URL — `cmd/cron/main.go` passes `cfg.ConsulAddr`
 (env var `CONSUL_ADDR`) — and an `*http.Client`, same shape as the plain
 `*http.Client` injection `webstackversioncheck.go`'s own `fetchLatest`
 funcs use. Tests fake the `Client` interface directly rather than standing
@@ -107,7 +122,7 @@ retrying up to 3 times (1s apart) on failure. Unlike `internal/consul`'s
 responds with a status that varies with seal/standby state (e.g. 503
 sealed, 429 standby), but the JSON body, including `version`, is populated
 regardless. `NewHTTPClient(addr, client)` takes Vault's HTTP API base
-URL — `main.go` passes `cfg.VaultAddr` (env var `VAULT_ADDR`) — and an
+URL — `cmd/cron/main.go` passes `cfg.VaultAddr` (env var `VAULT_ADDR`) — and an
 `*http.Client`, same shape as `internal/consul.NewHTTPClient`. Tests fake
 the `Client` interface directly rather than standing up a Vault server.
 
@@ -123,7 +138,7 @@ implementation, backed by Nomad's own agent-self endpoint (`GET
 retry shape as `internal/consul` and `internal/vault`. Unlike those two's
 equivalent endpoints, Nomad's requires an ACL token once ACLs are
 enabled — `NewHTTPClient(addr, token, client)` takes Nomad's HTTP API base
-URL (`main.go` passes `cfg.NomadAddr`, env var `NOMAD_ADDR`), an ACL token
+URL (`cmd/cron/main.go` passes `cfg.NomadAddr`, env var `NOMAD_ADDR`), an ACL token
 (`cfg.NomadToken`, env var `NOMAD_TOKEN` — see **Required env vars** below
 for how it reaches the task from Vault), and an `*http.Client`; every
 request carries the token as Nomad's `X-Nomad-Token` header. Tests fake the
@@ -153,12 +168,12 @@ dialer is actually covered.
 Each file is one `Job` implementation, independent of the others. Copy an
 existing one as the starting point for a new job — there's no shared base
 type or registry beyond passing the job into `cron.New(...)` in
-`cmd/api/main.go`.
+`cmd/cron/main.go`.
 
 - `aptupgrade.go` — `AptUpgradeCheck`, runs every morning at 9am, checks
   that a file has been modified within the last week. Takes that file's
   path as a constructor arg (`NewAptUpgradeCheck(path string) *AptUpgradeCheck`);
-  `main.go` passes `filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")`,
+  `cmd/cron/main.go` passes `filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")`,
   i.e. the host's real apt upgrade log — apt only writes to it when a
   package upgrade actually runs, so a missing or stale file means
   unattended upgrades have stopped running. Logs a warning in that case;
@@ -264,11 +279,13 @@ comment on the volume in `homelab-cron.nomad.hcl`.
 1. Add a new file in `internal/jobs/` implementing `cron.Job` (`Name`,
    `Schedule`, `Run`) — `aptupgrade.go` is the closest template, especially
    if the job reads host filesystem state.
-2. Register it in `cmd/api/main.go`'s `cron.New(...)` call.
+2. Register it in `cmd/cron/main.go`'s `cron.New(...)` call — not
+   `cmd/api/main.go`, which never builds a scheduler.
 3. If it needs a new env var (a secret, an external endpoint, etc.), add it
-   to `internal/config/config.go`, `.env.example`, and the `env`/`template`
-   stanza in `homelab-cron.nomad.hcl` (see `qotd-api.nomad.hcl`'s `template`
-   block for the Vault-backed-secret pattern, if the new var is a secret).
+   to `internal/config/config.go`, `.env.example`, and the `cron` task's
+   `env`/`template` stanza in `homelab-cron.nomad.hcl` (see
+   `qotd-api.nomad.hcl`'s `template` block for the Vault-backed-secret
+   pattern, if the new var is a secret).
 
 ## Required env vars
 
@@ -277,7 +294,7 @@ comment on the volume in `homelab-cron.nomad.hcl`.
   read-only. Defaults to `/host`.
 - `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` — sender and (comma-separated)
   recipient addresses for job alert emails. Both optional; if either is
-  unset, `main.go` wires up `mailer.Noop` instead of `mailer.SES` and
+  unset, `cmd/cron/main.go` wires up `mailer.Noop` instead of `mailer.SES` and
   alerting jobs just log. `ALERT_EMAIL_FROM` must be an SES-verified
   sender address.
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` — required
@@ -326,31 +343,52 @@ comment on the volume in `homelab-cron.nomad.hcl`.
 
 ## Docker
 
-Two-stage build, same shape as `qotd-api`:
-1. `golang:1.24-alpine` — installs `ca-certificates`, builds a static binary
-   (`CGO_ENABLED=0`).
-2. `FROM scratch` — copies in only the binary and
-   `/etc/ssl/certs/ca-certificates.crt` (for any future job that makes
-   outbound HTTPS calls).
+Two-stage build, same shape as `qotd-api`, except the build stage now
+produces two static binaries instead of one:
+1. `golang:1.24-alpine` — installs `ca-certificates`, builds two static
+   binaries (`CGO_ENABLED=0`): `/usr/local/bin/api` from `./cmd/api` and
+   `/usr/local/bin/cron` from `./cmd/cron`.
+2. `FROM scratch` — copies in both binaries and
+   `/etc/ssl/certs/ca-certificates.crt` (needed by `cron`'s outbound HTTPS
+   calls to upstream release APIs — see `webstackversioncheck.go`). There's
+   deliberately no `ENTRYPOINT`/`CMD`: the image just holds both binaries,
+   and the caller (Nomad's task `config.command`, or docker-compose's
+   `command:`) picks which one to run.
 
-Build/run:
+Build/run — `--entrypoint` selects which binary a one-off `docker run`
+starts, since the image sets neither `ENTRYPOINT` nor `CMD`:
 ```
 docker build -t homelab-cron:dev .
-docker run --rm -p 8080:8080 -v /:/host:ro -v /var/run/docker.sock:/var/run/docker.sock homelab-cron:dev
+docker run --rm -p 8080:8080 --entrypoint /usr/local/bin/api homelab-cron:dev
+docker run --rm -v /:/host:ro -v /var/run/docker.sock:/var/run/docker.sock --entrypoint /usr/local/bin/cron homelab-cron:dev
 ```
 (the Docker socket mount is only needed to exercise
 `internal/jobs.WebstackVersionCheck`'s live Docker version check — see
 **Host filesystem access** above for why it's unmounted separately, rather
-than read-only, from `-v /:/host:ro`.)
+than read-only, from `-v /:/host:ro` — and only `cron` needs either mount;
+`api` needs neither.)
 
-For local dev, `docker-compose.yml` builds and runs the same image; copy
-`.env.example` to `.env`, then `docker compose up --build`.
+For local dev, `docker-compose.yml` builds the same image once and runs it
+twice, as two services (`api` and `cron`, each with its own `command:`
+picking its binary and its own env/volumes); copy `.env.example` to `.env`,
+then `docker compose up --build`.
 
 ## Deployment (`homelab-cron.nomad.hcl`)
 
-`type = "service"` with a Consul `service` block and an HTTP check against
-`/health` — no Traefik tags, so it's never exposed publicly (Traefik's
-`exposedByDefault=false`, and nothing here opts in). CI (`.github/workflows/
+`type = "service"` with one group holding two tasks, `api` and `cron`,
+both from the same `var.image` (see **Docker** above) but selecting their
+binary via the docker driver's `config.command` (`/usr/local/bin/api` or
+`/usr/local/bin/cron`) — there's no separate image per binary. The group's
+`network { mode = "host" }` and its `service`/`check` block (a Consul
+`service` block with an HTTP check against `/health` — no Traefik tags, so
+it's never exposed publicly; Traefik's `exposedByDefault=false`, and
+nothing here opts in) are unchanged from before the split and apply to the
+group as a whole, not to either task individually — Nomad's `check` type
+`"http"` just hits the group's shared network namespace, so which task is
+actually listening on port 8080 (`api`) doesn't need to be declared. Only
+`cron` carries the host filesystem/Docker socket volumes, the `vault`
+block, and the AWS SES/Nomad-token `template` block — `api` has none of
+those, since it only ever serves `/health`. CI (`.github/workflows/
 deploy.yml`) builds/pushes `sayze/homelab-cron` on push to `master`, then
 runs `nomad job run` against the homelab's Nomad cluster, passing
 `-var="image=sayze/homelab-cron:sha-<short-sha>"` plus

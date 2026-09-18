@@ -13,11 +13,12 @@ process.
 ## Architecture
 
 Go, [chi](https://github.com/go-chi/chi) router, cmd-pattern composition
-root, and a thin scheduler wrapping
+roots, and a thin scheduler wrapping
 [`robfig/cron`](https://github.com/robfig/cron):
 
 ```
-cmd/api/main.go          entrypoint / composition root
+cmd/api/main.go           entrypoint: /health HTTP server only
+cmd/cron/main.go          entrypoint: builds and runs the cron scheduler
 internal/config            env var configuration
 internal/server              chi router (GET /health only)
 internal/cron                  the Job interface + Scheduler
@@ -29,22 +30,27 @@ internal/nomad                   reads Nomad's own live version
 internal/docker                  reads the local Docker daemon's own live version
 ```
 
-`cron.Scheduler` depends only on the `cron.Job` interface, not on any
-concrete job, so jobs are added by writing a new type in `internal/jobs/`
-and registering it in `main.go` — nothing else needs to change. Each job
-also declares whether it wants alerting (`AlertingEnabled`/`EmailContent`);
-the scheduler emails the result via `internal/mailer` after every run when
-enabled. See [CLAUDE.md](./CLAUDE.md) for the full design rationale.
+`api` and `cron` are separate processes (and, in the built Docker image,
+separate binaries) — `api` only ever serves `/health`; `cron` does all the
+actual work and has no HTTP surface. `cron.Scheduler` depends only on the
+`cron.Job` interface, not on any concrete job, so jobs are added by writing
+a new type in `internal/jobs/` and registering it in `cmd/cron/main.go` —
+nothing else needs to change. Each job also declares whether it wants
+alerting (`AlertingEnabled`/`EmailContent`); the scheduler emails the
+result via `internal/mailer` after every run when enabled. See
+[CLAUDE.md](./CLAUDE.md) for the full design rationale.
 
 ## Running locally
 
 Requires Go 1.24+.
 
 ```
-go run ./cmd/api
+go run ./cmd/api    # /health server
+go run ./cmd/cron   # scheduler
 ```
 
-Or via Docker Compose (copy `.env.example` to `.env` first):
+Or via Docker Compose (copy `.env.example` to `.env` first), which runs
+both as separate services from the same image:
 
 ```
 docker compose up --build
