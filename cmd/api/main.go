@@ -1,7 +1,6 @@
-// Command api is homelab-cron's HTTP entrypoint: it serves a single
-// /health route, used only for Nomad/Consul's own health check. The
-// service's actual work — running cron jobs — happens in the separate
-// cmd/cron entrypoint; this process does none of that.
+// Command api is homelab-cron's HTTP entrypoint: GET /health for
+// Nomad/Consul's health check, and GET /job/{name} to run a registered
+// job on demand (see internal/api). cmd/cron owns actual scheduling.
 package main
 
 import (
@@ -10,19 +9,46 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"homelab-cron/internal/api"
 	"homelab-cron/internal/config"
-	"homelab-cron/internal/server"
+	"homelab-cron/internal/consul"
+	"homelab-cron/internal/cron"
+	"homelab-cron/internal/docker"
+	"homelab-cron/internal/jobs"
+	"homelab-cron/internal/mailer"
+	"homelab-cron/internal/nomad"
+	"homelab-cron/internal/vault"
 )
 
 func main() {
 	cfg := config.Load()
 
+	m, err := mailer.New(context.Background(), mailer.Config{From: cfg.AlertEmailFrom, To: cfg.AlertEmailTo})
+	if err != nil {
+		log.Fatalf("failed to build mailer: %v", err)
+	}
+
+	consulClient, vaultClient, nomadClient, dockerClient := consul.NewHTTPClient(cfg.ConsulAddr, &http.Client{Timeout: 10 * time.Second}),
+		vault.NewHTTPClient(cfg.VaultAddr, &http.Client{Timeout: 10 * time.Second}),
+		nomad.NewHTTPClient(cfg.NomadAddr, cfg.NomadToken, &http.Client{Timeout: 10 * time.Second}),
+		docker.NewHTTPClient(cfg.DockerSock)
+
+	triggerable := []cron.Job{
+		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
+		jobs.NewWebstackVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
+	}
+	jobsByName := make(map[string]cron.Job, len(triggerable))
+	for _, j := range triggerable {
+		jobsByName[j.Name()] = j
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(),
+		Handler:           api.New(jobsByName, m),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

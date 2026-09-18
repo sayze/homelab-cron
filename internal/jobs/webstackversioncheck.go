@@ -101,8 +101,12 @@ func newWebstackVersionCheck(deps []dependency) *WebstackVersionCheck {
 	return &WebstackVersionCheck{deps: deps}
 }
 
+// WebstackVersionCheckJobName is this job's Name() — also the {name} path
+// param value for triggering it via GET /job/{name} (see internal/api).
+const WebstackVersionCheckJobName = "webstack-version-check"
+
 // Name identifies this job in logs.
-func (*WebstackVersionCheck) Name() string { return "webstack-version-check" }
+func (*WebstackVersionCheck) Name() string { return WebstackVersionCheckJobName }
 
 // Schedule runs once a week, Monday at 7am — version drift moves slowly, so
 // there's no need to check more often.

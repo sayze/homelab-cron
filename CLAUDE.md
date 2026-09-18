@@ -5,10 +5,13 @@ the homelab's Nomad cluster. Every job is a Go type implementing the `Job`
 interface — there is no dynamic/config-driven job loading, no scripting
 layer, and no way to add a job without a code change and redeploy.
 
-This service exposes exactly one HTTP route, `GET /health`, used only for
-Nomad/Consul's own health check. It is never routed through Traefik and has
-no other API surface — all real work happens on cron schedules inside the
-process, not in response to HTTP requests.
+`cmd/api` serves two HTTP routes: `GET /health`, used only for
+Nomad/Consul's own health check, and `GET /job/{name}`, which lets an
+operator trigger a registered job to run immediately, outside its
+schedule. Neither route is routed through Traefik — both are reachable
+only on the homelab's internal network. All other work happens on cron
+schedules inside the separate `cmd/cron` process, not in response to HTTP
+requests.
 
 ## Architecture (cmd pattern)
 
@@ -19,32 +22,46 @@ that does both. Each loads its own `config.Load()` and only reads the env
 vars it actually needs; unused ones are simply ignored (`config.Load()`
 itself doesn't know or care which binary is calling it).
 
-- `cmd/api/main.go` — entrypoint for the `/health` HTTP server only. Loads
-  `config.Load()`, builds the router via `server.New()`, starts
-  `http.ListenAndServe` on `cfg.Addr`. Listens for `SIGINT`/`SIGTERM`: on
-  signal, shuts the HTTP server down (`srv.Shutdown`, 10s timeout). Does
-  not build a scheduler or run any jobs — it has no dependency on
-  `internal/cron`, `internal/jobs`, `internal/mailer`, or any of the
-  version-check clients (`internal/consul`, `internal/vault`,
-  `internal/nomad`, `internal/docker`).
+- `cmd/api/main.go` — HTTP entrypoint. Loads `config.Load()`, builds the
+  same `internal/consul`/`internal/vault`/`internal/nomad`/`internal/docker`
+  clients and `internal/jobs` jobs `cmd/cron` does, but only to hand them to
+  `internal/api.New(jobs, m)` as a `map[string]cron.Job` keyed by each
+  job's `Name()` — never to `cron.New(...)`/`cron.Scheduler`, which is
+  `cmd/cron`'s alone. Starts `http.ListenAndServe` on `cfg.Addr`. Listens
+  for `SIGINT`/`SIGTERM`: on signal, shuts the HTTP server down
+  (`srv.Shutdown`, 10s timeout). A `GET /job/{name}` request runs the
+  matching job directly via `cron.RunJob` (see `internal/cron/scheduler.go`
+  below) — `cmd/api` never talks to the `cmd/cron` process to do this; it
+  just runs its own copy of the job.
 - `cmd/cron/main.go` — entrypoint for the scheduler. Loads `config.Load()`,
-  builds the `internal/consul`/`internal/vault`/`internal/nomad`/
-  `internal/docker` clients, builds a `cron.Scheduler` from the jobs in
-  `internal/jobs`, starts it. Listens for `SIGINT`/`SIGTERM`: on signal,
-  stops the scheduler (deferred `scheduler.Stop()`), which cancels any
-  in-flight job's context and blocks until it returns — so a job mid-read
-  of the host filesystem gets a chance to notice cancellation and finish
-  cleanly before the process exits. Has no HTTP server of its own — it
-  never imports `internal/server`.
+  builds the same clients/jobs `cmd/api` does, builds a `cron.Scheduler`
+  from them, starts it. Has no HTTP surface of its own — it never imports
+  `internal/api`. Listens for `SIGINT`/`SIGTERM`: on signal, stops the
+  scheduler (deferred `scheduler.Stop()`), which cancels any in-flight
+  job's context and blocks until it returns — so a job mid-read of the
+  host filesystem gets a chance to notice cancellation and finish cleanly
+  before the process exits.
 - `internal/config/config.go` — env var loading (`ADDR`, `HOST_ROOT`,
   `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `CONSUL_ADDR`, `VAULT_ADDR`), plain
-  `os.Getenv`/`os.Getenv` + comma-split with defaults, no third-party config
-  library. Deliberately does *not* read AWS credentials/region — those go
-  straight to the AWS SDK's own env chain (see `internal/mailer`).
-- `internal/server/server.go` — chi router. Middleware: chi's default stack
-  (`RequestID`, `Logger`, `Recoverer`). One route: `GET /health` → `200
-  {"status":"ok"}`. No CORS, no auth — nothing here is meant to be called by
-  a browser or an external client.
+  `os.Getenv`/`os.Getenv` + comma-split with defaults, no third-party
+  config library. `ADDR` is read only by `cmd/api`, for its HTTP server's
+  listen address — `cmd/cron` has no HTTP server and doesn't read it.
+  Deliberately does *not* read AWS credentials/region — those go straight
+  to the AWS SDK's own env chain (see `internal/mailer`).
+- `internal/api/api.go` — chi router. Middleware: chi's default stack
+  (`RequestID`, `Logger`, `Recoverer`). `GET /health` → `200
+  {"status":"ok"}`. `GET /job/{name}` → looks `name` up in the
+  `map[string]cron.Job` given to `New`, runs it via `cron.RunJob` in its
+  own goroutine (not waiting for it to finish), and returns `202
+  {"status":"triggered","job":name}`; `name` not in the map is a `404
+  {"error":"job not found"}`. `New(jobs map[string]cron.Job, m
+  mailer.Sender)` takes the jobs and the mailer `RunJob` uses for a
+  triggered job's alert email as explicit dependencies — no interface
+  indirection, no dependency on `cron.Scheduler` at all; `internal/api`
+  only needs `cron.Job` and `cron.RunJob`. No CORS, no auth — nothing
+  here is meant to be called by a browser; both routes are only reachable
+  on the homelab's internal network (see **Deployment**), not routed
+  through Traefik.
 
 ### Cron scheduling (`internal/cron/`)
 
@@ -65,13 +82,17 @@ itself doesn't know or care which binary is calling it).
   expression is invalid (fails fast at startup, not at the job's next
   scheduled run). `Start()` is non-blocking. `Stop()` cancels a context
   shared by all in-flight job runs, then blocks until robfig/cron confirms
-  none are still running. Each run is wrapped in `runJob`, which logs
+  none are still running. Each scheduled tick calls the exported
+  `RunJob(ctx context.Context, m mailer.Sender, j Job)`, which logs
   start/finish/duration, recovers a panic so one broken job can't take the
-  process down or block other jobs' future runs, and — once `Run` returns,
-  success or not — sends the job's alert email via `m` if
-  `AlertingEnabled()` is true and `EmailContent()` is non-empty. The send
-  uses its own 10s timeout independent of the job's (shutdown-cancellable)
-  ctx, so a job cancelled by `Stop()` still gets a chance to alert.
+  caller down, and — once `Run` returns, success or not — sends the job's
+  alert email via `m` if `AlertingEnabled()` is true and `EmailContent()`
+  is non-empty. The send uses its own 10s timeout independent of `ctx`, so
+  a job cancelled by `Stop()` still gets a chance to alert. `RunJob` is
+  exported specifically so `internal/api` can call it directly for `GET
+  /job/{name}` — running a job on demand needs none of `Scheduler`'s
+  robfig/cron machinery, just this one function; `internal/cron` doesn't
+  import `internal/api`, or know that HTTP triggering exists at all.
 
 ### Email alerting (`internal/mailer/`)
 
@@ -88,9 +109,15 @@ caller, driven by each job's `AlertingEnabled`/`EmailContent`.
   requirement that credentials/identifiers be propagated through env vars.
   `from`/`to` are this service's own `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`.
   `from` must be an SES-verified sender address.
-- `noop.go` — `Noop`, logs instead of sending. `cmd/cron/main.go` wires this in when
-  `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` aren't both set, so alerting jobs
-  don't error out in local dev without AWS credentials.
+- `noop.go` — `Noop`, logs instead of sending.
+- `factory.go` — `Config` (`From`/`To`, this package's own small config,
+  not `internal/config.Config` — `mailer` only needs these two fields, so
+  it doesn't depend on the whole service's config) and `New(ctx, cfg)`,
+  which builds the `Sender` both `cmd/api/main.go` and `cmd/cron/main.go`
+  use, each passing `mailer.Config{From: cfg.AlertEmailFrom, To:
+  cfg.AlertEmailTo}`: `SES` if both fields are set, otherwise `Noop`, so
+  alerting jobs don't error out in local dev without AWS credentials. Both
+  binaries call this instead of each duplicating the same branch.
 
 ### Consul client (`internal/consul/`)
 
@@ -103,8 +130,8 @@ the concrete implementation, backed by Consul's HTTP health API
 off the first passing instance's `Service.Meta`, retrying up to 3 times
 (1s apart) on failure, and errors if there's no passing instance or no
 `version` meta. `NewHTTPClient(addr, client)` takes
-Consul's HTTP API base URL — `cmd/cron/main.go` passes `cfg.ConsulAddr`
-(env var `CONSUL_ADDR`) — and an `*http.Client`, same shape as the plain
+Consul's HTTP API base URL — both `cmd/api/main.go` and `cmd/cron/main.go`
+pass `cfg.ConsulAddr` (env var `CONSUL_ADDR`) — and an `*http.Client`, same shape as the plain
 `*http.Client` injection `webstackversioncheck.go`'s own `fetchLatest`
 funcs use. Tests fake the `Client` interface directly rather than standing
 up a Consul server.
@@ -122,7 +149,8 @@ retrying up to 3 times (1s apart) on failure. Unlike `internal/consul`'s
 responds with a status that varies with seal/standby state (e.g. 503
 sealed, 429 standby), but the JSON body, including `version`, is populated
 regardless. `NewHTTPClient(addr, client)` takes Vault's HTTP API base
-URL — `cmd/cron/main.go` passes `cfg.VaultAddr` (env var `VAULT_ADDR`) — and an
+URL — both `cmd/api/main.go` and `cmd/cron/main.go` pass `cfg.VaultAddr`
+(env var `VAULT_ADDR`) — and an
 `*http.Client`, same shape as `internal/consul.NewHTTPClient`. Tests fake
 the `Client` interface directly rather than standing up a Vault server.
 
@@ -138,7 +166,7 @@ implementation, backed by Nomad's own agent-self endpoint (`GET
 retry shape as `internal/consul` and `internal/vault`. Unlike those two's
 equivalent endpoints, Nomad's requires an ACL token once ACLs are
 enabled — `NewHTTPClient(addr, token, client)` takes Nomad's HTTP API base
-URL (`cmd/cron/main.go` passes `cfg.NomadAddr`, env var `NOMAD_ADDR`), an ACL token
+URL (both `cmd/api/main.go` and `cmd/cron/main.go` pass `cfg.NomadAddr`, env var `NOMAD_ADDR`), an ACL token
 (`cfg.NomadToken`, env var `NOMAD_TOKEN` — see **Required env vars** below
 for how it reaches the task from Vault), and an `*http.Client`; every
 request carries the token as Nomad's `X-Nomad-Token` header. Tests fake the
@@ -167,13 +195,21 @@ dialer is actually covered.
 
 Each file is one `Job` implementation, independent of the others. Copy an
 existing one as the starting point for a new job — there's no shared base
-type or registry beyond passing the job into `cron.New(...)` in
-`cmd/cron/main.go`.
+type or registry: `cmd/cron/main.go` passes the same jobs to `cron.New(...)`
+(for scheduling) that `cmd/api/main.go` builds a `map[string]cron.Job`
+from (for on-demand triggering), and both main.go's construct them
+identically, by hand. Each job exports its `Name()` string as a const
+(e.g. `AptUpgradeCheckJobName`, `WebstackVersionCheckJobName`) right next
+to the `Name()` method that returns it — this is the single source of
+truth for that job's `GET /job/{name}` trigger value (see
+`internal/api`), so it can't drift out of sync with what the scheduler
+actually registers the job under.
 
 - `aptupgrade.go` — `AptUpgradeCheck`, runs every morning at 9am, checks
   that a file has been modified within the last week. Takes that file's
   path as a constructor arg (`NewAptUpgradeCheck(path string) *AptUpgradeCheck`);
-  `cmd/cron/main.go` passes `filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")`,
+  both `cmd/api/main.go` and `cmd/cron/main.go` pass
+  `filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")`,
   i.e. the host's real apt upgrade log — apt only writes to it when a
   package upgrade actually runs, so a missing or stale file means
   unattended upgrades have stopped running. Logs a warning in that case;
@@ -278,25 +314,32 @@ comment on the volume in `homelab-cron.nomad.hcl`.
 
 1. Add a new file in `internal/jobs/` implementing `cron.Job` (`Name`,
    `Schedule`, `Run`) — `aptupgrade.go` is the closest template, especially
-   if the job reads host filesystem state.
-2. Register it in `cmd/cron/main.go`'s `cron.New(...)` call — not
-   `cmd/api/main.go`, which never builds a scheduler.
+   if the job reads host filesystem state. Export the job's name as a
+   const next to `Name()` (see the **Jobs** section above), so it's
+   immediately usable as a `GET /job/{name}` trigger value.
+2. Construct it in *both* `cmd/cron/main.go`'s `cron.New(...)` call (so it
+   runs on its schedule) and `cmd/api/main.go`'s job map (so it can be
+   triggered on demand) — the two main.go's don't share this wiring, so a
+   job left out of one still works in the other, just not both.
 3. If it needs a new env var (a secret, an external endpoint, etc.), add it
-   to `internal/config/config.go`, `.env.example`, and the `cron` task's
-   `env`/`template` stanza in `homelab-cron.nomad.hcl` (see
+   to `internal/config/config.go`, `.env.example`, and *both* tasks'
+   `env`/`template` stanzas in `homelab-cron.nomad.hcl` (see
    `qotd-api.nomad.hcl`'s `template` block for the Vault-backed-secret
-   pattern, if the new var is a secret).
+   pattern, if the new var is a secret) — `cron` needs it for the
+   scheduled run, `api` for the on-demand one.
 
 ## Required env vars
 
-- `ADDR` — listen address for the `/health` server. Defaults to `:8080`.
+- `ADDR` — listen address for `cmd/api`'s HTTP server (`GET /health`,
+  `GET /job/{name}`). Defaults to `:8080`. `cmd/cron` has no HTTP server
+  and doesn't read this.
 - `HOST_ROOT` — path where the host's root filesystem is mounted
   read-only. Defaults to `/host`.
 - `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` — sender and (comma-separated)
   recipient addresses for job alert emails. Both optional; if either is
-  unset, `cmd/cron/main.go` wires up `mailer.Noop` instead of `mailer.SES` and
-  alerting jobs just log. `ALERT_EMAIL_FROM` must be an SES-verified
-  sender address.
+  unset, `mailer.New` (see above) returns `mailer.Noop` instead of
+  `mailer.SES` and alerting jobs just log.
+  `ALERT_EMAIL_FROM` must be an SES-verified sender address.
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` — required
   if the above are set. Standard AWS SDK env vars, read directly by
   `aws-sdk-go-v2`'s default config chain, not by this repo's own
@@ -356,17 +399,19 @@ produces two static binaries instead of one:
    `command:`) picks which one to run.
 
 Build/run — `--entrypoint` selects which binary a one-off `docker run`
-starts, since the image sets neither `ENTRYPOINT` nor `CMD`:
+starts, since the image sets neither `ENTRYPOINT` nor `CMD`. Both binaries
+now need the host mount and Docker socket: `api` needs them to actually
+run a triggered `AptUpgradeCheck`/`WebstackVersionCheck`, same as `cron`
+needs them for the scheduled run:
 ```
 docker build -t homelab-cron:dev .
-docker run --rm -p 8080:8080 --entrypoint /usr/local/bin/api homelab-cron:dev
+docker run --rm -p 8080:8080 -v /:/host:ro -v /var/run/docker.sock:/var/run/docker.sock --entrypoint /usr/local/bin/api homelab-cron:dev
 docker run --rm -v /:/host:ro -v /var/run/docker.sock:/var/run/docker.sock --entrypoint /usr/local/bin/cron homelab-cron:dev
 ```
 (the Docker socket mount is only needed to exercise
 `internal/jobs.WebstackVersionCheck`'s live Docker version check — see
 **Host filesystem access** above for why it's unmounted separately, rather
-than read-only, from `-v /:/host:ro` — and only `cron` needs either mount;
-`api` needs neither.)
+than read-only, from `-v /:/host:ro`.)
 
 For local dev, `docker-compose.yml` builds the same image once and runs it
 twice, as two services (`api` and `cron`, each with its own `command:`
@@ -379,16 +424,19 @@ then `docker compose up --build`.
 both from the same `var.image` (see **Docker** above) but selecting their
 binary via the docker driver's `config.command` (`/usr/local/bin/api` or
 `/usr/local/bin/cron`) — there's no separate image per binary. The group's
-`network { mode = "host" }` and its `service`/`check` block (a Consul
-`service` block with an HTTP check against `/health` — no Traefik tags, so
-it's never exposed publicly; Traefik's `exposedByDefault=false`, and
-nothing here opts in) are unchanged from before the split and apply to the
-group as a whole, not to either task individually — Nomad's `check` type
-`"http"` just hits the group's shared network namespace, so which task is
-actually listening on port 8080 (`api`) doesn't need to be declared. Only
-`cron` carries the host filesystem/Docker socket volumes, the `vault`
-block, and the AWS SES/Nomad-token `template` block — `api` has none of
-those, since it only ever serves `/health`. CI (`.github/workflows/
+`network { mode = "host" }` declares one static port, `http` (8080), which
+only `api` listens on (`cron` has no HTTP server). The `service`/`check`
+block (a Consul `service` block with an HTTP check against `/health` — no
+Traefik tags, so it's never exposed publicly; Traefik's
+`exposedByDefault=false`, and nothing here opts in) covers that port, so
+`GET /job/{name}` sits on the same address as the health check, reachable
+only by curling the placement node directly on the homelab's internal
+network — not service-discovered or given its own check. Since triggering
+a job means `api` actually running it (see `internal/api`), `api` now
+carries the same host filesystem/Docker socket volumes, `vault` block,
+and AWS SES/Nomad-token `template` block `cron` does — both tasks need
+identical runtime capability to run `internal/jobs`' jobs, they just do it
+on different triggers (a schedule vs. an HTTP request). CI (`.github/workflows/
 deploy.yml`) builds/pushes `sayze/homelab-cron` on push to `master`, then
 runs `nomad job run` against the homelab's Nomad cluster, passing
 `-var="image=sayze/homelab-cron:sha-<short-sha>"` plus

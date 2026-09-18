@@ -1,6 +1,7 @@
 // Command cron is homelab-cron's scheduler entrypoint: it builds and runs
 // the service's cron jobs. It has no HTTP surface of its own — see cmd/api
-// for the /health server used by Nomad/Consul's health check.
+// for /health and GET /job/{name} (the latter runs a job on demand,
+// outside its schedule, without going through this process at all).
 package main
 
 import (
@@ -26,7 +27,7 @@ import (
 func main() {
 	cfg := config.Load()
 
-	m, err := newMailer(cfg)
+	m, err := mailer.New(context.Background(), mailer.Config{From: cfg.AlertEmailFrom, To: cfg.AlertEmailTo})
 	if err != nil {
 		log.Fatalf("failed to build mailer: %v", err)
 	}
@@ -54,16 +55,4 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("shutting down")
-}
-
-// newMailer builds the mailer used to send alerting jobs' emails. If
-// ALERT_EMAIL_FROM/ALERT_EMAIL_TO aren't both set, alerting isn't
-// configured and it returns a mailer.Noop that logs instead of sending —
-// this keeps local dev (no AWS credentials) working without error.
-func newMailer(cfg config.Config) (mailer.Sender, error) {
-	if cfg.AlertEmailFrom == "" || len(cfg.AlertEmailTo) == 0 {
-		log.Println("mailer: ALERT_EMAIL_FROM/ALERT_EMAIL_TO not set, alert emails will only be logged")
-		return mailer.Noop{}, nil
-	}
-	return mailer.NewSES(context.Background(), cfg.AlertEmailFrom, cfg.AlertEmailTo)
 }

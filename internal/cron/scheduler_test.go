@@ -83,7 +83,7 @@ func TestRunJob_RecoversPanic(t *testing.T) {
 	j := testJob{name: "panics", run: func(context.Context) error { panic("boom") }}
 
 	assert.NotPanics(t, func() {
-		runJob(context.Background(), mailer.Noop{}, j)
+		RunJob(context.Background(), mailer.Noop{}, j)
 	})
 }
 
@@ -101,7 +101,7 @@ func TestRunJob_PassesContextThrough(t *testing.T) {
 		return nil
 	}}
 
-	runJob(ctx, mailer.Noop{}, j)
+	RunJob(ctx, mailer.Noop{}, j)
 	assert.True(t, sawCancel.Load())
 }
 
@@ -129,7 +129,7 @@ func TestRunJob_Alerting(t *testing.T) {
 				run:          func(context.Context) error { return tt.runErr },
 			}
 
-			runJob(context.Background(), m, j)
+			RunJob(context.Background(), m, j)
 
 			if !tt.wantSent {
 				assert.Empty(t, m.sent)
