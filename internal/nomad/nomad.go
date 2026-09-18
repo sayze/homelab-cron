@@ -32,10 +32,7 @@ type Client interface {
 // HTTPClient is a Client backed by Nomad's HTTP agent API
 // (https://developer.hashicorp.com/nomad/api-docs/agent#read-agent-configuration).
 // Unlike internal/consul and internal/vault's equivalent endpoints, Nomad's
-// requires an ACL token with at least agent:read once ACLs are enabled —
-// token is homelab-cron's own NOMAD_TOKEN config, rendered into the task
-// from Vault's secret/data/homelab/homelab-cron#nomad_token (see
-// homelab-cron.nomad.hcl's template block).
+// requires an ACL token with at least agent:read once ACLs are enabled.
 type HTTPClient struct {
 	addr   string
 	token  string

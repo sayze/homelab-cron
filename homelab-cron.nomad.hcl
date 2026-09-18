@@ -92,9 +92,7 @@ job "homelab-cron" {
         # CONSUL_ADDR/VAULT_ADDR/NOMAD_ADDR are deliberately unset here: on
         # the host network, internal/config's own defaults
         # (http://127.0.0.1:8500, :8200, and :4646, Consul's, Vault's, and
-        # Nomad's own local-agent addresses) already resolve correctly,
-        # same as traefik.nomad.hcl's
-        # --providers.consulcatalog.endpoint.address.
+        # Nomad's own local-agent addresses) already resolve correctly.
       }
 
       # AWS SES credentials for a triggered job's alert email
@@ -167,9 +165,7 @@ job "homelab-cron" {
         # CONSUL_ADDR/VAULT_ADDR/NOMAD_ADDR are deliberately unset here: on
         # the host network, internal/config's own defaults
         # (http://127.0.0.1:8500, :8200, and :4646, Consul's, Vault's, and
-        # Nomad's own local-agent addresses) already resolve correctly,
-        # same as traefik.nomad.hcl's
-        # --providers.consulcatalog.endpoint.address.
+        # Nomad's own local-agent addresses) already resolve correctly.
       }
 
       # AWS SES credentials for job alert emails (internal/mailer), and the
