@@ -25,7 +25,8 @@ job "homelab-cron" {
   group "homelab-cron" {
     count = 1
 
-    # Host networking so this task can reach local agents/components directly
+    # Host networking so the cron task can reach local agents/components
+    # directly. Both tasks in this group share it.
     network {
       mode = "host"
 
@@ -50,7 +51,35 @@ job "homelab-cron" {
       }
     }
 
-    task "homelab-cron" {
+    # api serves only /health, for the check above. It carries none of the
+    # cron task's host mount, Docker socket, or secrets.
+    task "api" {
+      driver = "docker"
+
+      config {
+        image        = var.image
+        command      = "/usr/local/bin/api"
+        network_mode = "host"
+      }
+
+      env {
+        ADDR = ":8080"
+      }
+
+      logs {
+        max_files     = 3
+        max_file_size = 10
+      }
+
+      resources {
+        cpu    = 50
+        memory = 64
+      }
+    }
+
+    # cron builds and runs this service's actual cron jobs. It has no HTTP
+    # surface of its own — see the api task above for /health.
+    task "cron" {
       driver = "docker"
 
       vault {
@@ -59,6 +88,7 @@ job "homelab-cron" {
 
       config {
         image        = var.image
+        command      = "/usr/local/bin/cron"
         network_mode = "host"
 
         volumes = [
@@ -73,7 +103,6 @@ job "homelab-cron" {
       }
 
       env {
-        ADDR      = ":8080"
         HOST_ROOT = "/host"
 
         # DOCKER_SOCK is deliberately unset here: internal/config's own
