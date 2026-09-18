@@ -25,7 +25,7 @@ var retryDelay = time.Second
 // directly rather than standing up a Nomad agent.
 type Client interface {
 	// Version returns this Nomad agent's own version, read from the
-	// "Version" key of GET /v1/agent/self's Config map.
+	// nested "Version" key of GET /v1/agent/self's Config.Version object.
 	Version(ctx context.Context) (string, error)
 }
 
@@ -51,8 +51,8 @@ func NewHTTPClient(addr, token string, client *http.Client) *HTTPClient {
 }
 
 // Version implements Client by querying Nomad's own /v1/agent/self endpoint
-// and reading Config.Version off the response, retrying up to maxAttempts
-// times on failure.
+// and reading Config.Version.Version off the response, retrying up to
+// maxAttempts times on failure.
 func (c *HTTPClient) Version(ctx context.Context) (string, error) {
 	var err error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -76,11 +76,15 @@ func (c *HTTPClient) Version(ctx context.Context) (string, error) {
 // package needs. Nomad's "config" object serializes its Go struct directly
 // (PascalCase keys), unlike "stats", whose metrics are snake_case and don't
 // include a version at all — stats.nomad only has server/leader/bootstrap/
-// known_regions fields. Nomad reports its own version at config.Version,
-// same shape as Consul's equivalent endpoint (config.Version).
+// known_regions fields. Unlike Consul's identically-shaped endpoint, where
+// Config.Version is a bare string, Nomad's Config.Version is itself a
+// version.VersionInfo object (Version/Revision/VersionPrerelease/
+// VersionMetadata) — this package only needs the nested Version field.
 type agentSelfResponse struct {
 	Config struct {
-		Version string `json:"Version"`
+		Version struct {
+			Version string `json:"Version"`
+		} `json:"Version"`
 	} `json:"config"`
 }
 
@@ -112,8 +116,8 @@ func (c *HTTPClient) version(ctx context.Context) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return "", fmt.Errorf("nomad: decode agent self response: %w", err)
 	}
-	if body.Config.Version == "" {
-		return "", fmt.Errorf("nomad: agent self response has no config.Version")
+	if body.Config.Version.Version == "" {
+		return "", fmt.Errorf("nomad: agent self response has no config.Version.Version")
 	}
-	return body.Config.Version, nil
+	return body.Config.Version.Version, nil
 }

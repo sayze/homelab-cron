@@ -161,8 +161,11 @@ by `internal/jobs.WebstackVersionCheck` to look up Nomad's own
 actually-deployed version live instead of a hand-maintained baseline (see
 the `webstackversioncheck.go` entry below). `HTTPClient` is the concrete
 implementation, backed by Nomad's own agent-self endpoint (`GET
-/v1/agent/self`); it reads the `Version` key off the response body's
-`config` object, retrying up to 3 times (1s apart) on failure — same
+/v1/agent/self`); it reads the nested `Version` key off the response
+body's `config.Version` object — unlike Consul's identically-shaped
+endpoint, where `Config.Version` is a bare string, Nomad's `Config.Version`
+is itself an object (`Version`/`Revision`/`VersionPrerelease`/
+`VersionMetadata`) — retrying up to 3 times (1s apart) on failure — same
 retry shape as `internal/consul` and `internal/vault`. Unlike those two's
 equivalent endpoints, Nomad's requires an ACL token once ACLs are
 enabled — `NewHTTPClient(addr, token, client)` takes Nomad's HTTP API base
@@ -252,8 +255,10 @@ actually registers the job under.
   failure; `nomadCurrent` (`internal/nomad`) hits Nomad's own `GET
   /v1/agent/self` (unlike Consul's identically-named endpoint, this one
   requires an ACL token once ACLs are enabled — see `internal/nomad`) and
-  reads `config.Version` off it directly, same shape as Consul's
-  `Config.Version`, since Nomad's `stats.nomad` map has no version field of
+  reads `config.Version.Version` off it — unlike Consul's identically-named
+  endpoint, where `Config.Version` is a bare string, Nomad's `Config.Version`
+  is itself a nested object (`Version`/`Revision`/`VersionPrerelease`/
+  `VersionMetadata`), since Nomad's `stats.nomad` map has no version field of
   its own; `dockerCurrent`
   (`internal/docker`) hits the local Docker daemon's own Engine API `GET
   /version` over its Unix socket and reads `Version` off the response body
