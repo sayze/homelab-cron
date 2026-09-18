@@ -25,14 +25,14 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 		{
 			name: "up to date",
 			deps: []dependency{
-				{name: "Consul", currentVersion: "2.0.4", fetchLatest: fakeLatest("2.0.4", nil)},
+				{name: "Consul", fetchCurrent: fakeCurrent("2.0.4", nil), fetchLatest: fakeLatest("2.0.4", nil)},
 			},
 			wantContent: false,
 		},
 		{
 			name: "major version behind",
 			deps: []dependency{
-				{name: "Consul", currentVersion: "1.22.2", fetchLatest: fakeLatest("2.0.4", nil)},
+				{name: "Consul", fetchCurrent: fakeCurrent("1.22.2", nil), fetchLatest: fakeLatest("2.0.4", nil)},
 			},
 			wantContent: true,
 			wantSubstr:  []string{"Consul", "1.22.2", "2.0.4"},
@@ -40,14 +40,14 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 		{
 			name: "minor/patch behind is not alerted",
 			deps: []dependency{
-				{name: "Nomad", currentVersion: "1.8.4", fetchLatest: fakeLatest("1.9.0", nil)},
+				{name: "Nomad", fetchCurrent: fakeCurrent("1.8.4", nil), fetchLatest: fakeLatest("1.9.0", nil)},
 			},
 			wantContent: false,
 		},
 		{
 			name: "docker apt version format compares correctly",
 			deps: []dependency{
-				{name: "Docker", currentVersion: "5:28.5.2-1~ubuntu.24.04~noble", fetchLatest: fakeLatest("v29.8.1", nil)},
+				{name: "Docker", fetchCurrent: fakeCurrent("5:28.5.2-1~ubuntu.24.04~noble", nil), fetchLatest: fakeLatest("v29.8.1", nil)},
 			},
 			wantContent: true,
 			wantSubstr:  []string{"Docker"},
@@ -55,7 +55,7 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 		{
 			name: "postgres bare major version format compares correctly",
 			deps: []dependency{
-				{name: "PostgreSQL", currentVersion: "16", fetchLatest: fakeLatest("18", nil)},
+				{name: "PostgreSQL", fetchCurrent: fakeCurrent("16", nil), fetchLatest: fakeLatest("18", nil)},
 			},
 			wantContent: true,
 			wantSubstr:  []string{"PostgreSQL"},
@@ -63,7 +63,7 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 		{
 			name: "fetch failure is reported, not fatal",
 			deps: []dependency{
-				{name: "Vault", currentVersion: "1.18.3", fetchLatest: fakeLatest("", errors.New("boom"))},
+				{name: "Vault", fetchCurrent: fakeCurrent("1.18.3", nil), fetchLatest: fakeLatest("", errors.New("boom"))},
 			},
 			wantContent: true,
 			wantSubstr:  []string{"Vault", "could not check"},
@@ -71,8 +71,8 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 		{
 			name: "only the dependency that's behind is reported",
 			deps: []dependency{
-				{name: "Consul", currentVersion: "2.0.4", fetchLatest: fakeLatest("2.0.4", nil)},
-				{name: "Nomad", currentVersion: "1.8.4", fetchLatest: fakeLatest("2.0.6", nil)},
+				{name: "Consul", fetchCurrent: fakeCurrent("2.0.4", nil), fetchLatest: fakeLatest("2.0.4", nil)},
+				{name: "Nomad", fetchCurrent: fakeCurrent("1.8.4", nil), fetchLatest: fakeLatest("2.0.6", nil)},
 			},
 			wantContent: true,
 			wantSubstr:  []string{"Nomad"},
@@ -140,14 +140,14 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 
 func TestWebstackVersionCheck_Run_DoesNotLeakPreviousAlert(t *testing.T) {
 	deps := []dependency{
-		{name: "Consul", currentVersion: "1.22.2", fetchLatest: fakeLatest("2.0.4", nil)},
+		{name: "Consul", fetchCurrent: fakeCurrent("1.22.2", nil), fetchLatest: fakeLatest("2.0.4", nil)},
 	}
 	job := newWebstackVersionCheck(deps)
 
 	assert.NoError(t, job.Run(context.Background()))
 	assert.NotEmpty(t, job.EmailContent())
 
-	job.deps[0].currentVersion = "2.0.4"
+	job.deps[0].fetchCurrent = fakeCurrent("2.0.4", nil)
 	assert.NoError(t, job.Run(context.Background()))
 	assert.Empty(t, job.EmailContent())
 }

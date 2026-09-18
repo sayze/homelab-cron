@@ -23,15 +23,7 @@ import (
 type dependency struct {
 	name string
 
-	// currentVersion is a hand-maintained pinned baseline, used when
-	// fetchCurrent is nil. Dependencies that can report their own deployed
-	// version live use fetchCurrent instead, so the baseline can't drift
-	// out of sync with what's actually running — see consulCurrent (via
-	// Consul service meta), vaultCurrent (via Vault's own health endpoint),
-	// nomadCurrent (via Nomad's own agent-self endpoint), and dockerCurrent
-	// (via the local Docker daemon's own Engine API).
-	currentVersion string
-	fetchCurrent   func(ctx context.Context) (string, error)
+	fetchCurrent func(ctx context.Context) (string, error)
 
 	fetchLatest func(ctx context.Context) (string, error)
 }
@@ -121,15 +113,11 @@ func (j *WebstackVersionCheck) Run(ctx context.Context) error {
 	var lines []string
 
 	for _, d := range j.deps {
-		current := d.currentVersion
-		if d.fetchCurrent != nil {
-			v, err := d.fetchCurrent(ctx)
-			if err != nil {
-				log.Printf("webstack-version-check: %s: failed to fetch current version: %v", d.name, err)
-				lines = append(lines, fmt.Sprintf("- %s: could not check current version (%v)", d.name, err))
-				continue
-			}
-			current = v
+		current, err := d.fetchCurrent(ctx)
+		if err != nil {
+			log.Printf("webstack-version-check: %s: failed to fetch current version: %v", d.name, err)
+			lines = append(lines, fmt.Sprintf("- %s: could not check current version (%v)", d.name, err))
+			continue
 		}
 
 		latest, err := d.fetchLatest(ctx)
