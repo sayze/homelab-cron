@@ -1,6 +1,7 @@
 // Command cron is homelab-cron's scheduler entrypoint: it builds and runs
 // the service's cron jobs. It has no HTTP surface of its own — see cmd/api
-// for the /health server used by Nomad/Consul's health check.
+// for /health and GET /job/{name} (the latter runs a job on demand,
+// outside its schedule, without going through this process at all).
 package main
 
 import (

@@ -10,7 +10,9 @@ import (
 // Config holds homelab-cron's runtime configuration, loaded from
 // environment variables by Load.
 type Config struct {
-	// Addr is the listen address for the /health HTTP server.
+	// Addr is the listen address for cmd/api's HTTP server (GET /health,
+	// GET /job/{name} — see internal/api). cmd/cron doesn't read this; it
+	// has no HTTP server of its own.
 	Addr string
 
 	// HostRoot is the path (inside the container) where the host's root

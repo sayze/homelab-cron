@@ -19,7 +19,7 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 COPY --from=build /out/api /usr/local/bin/api
 COPY --from=build /out/cron /usr/local/bin/cron
 
-EXPOSE 8080
+EXPOSE 8080 8081
 
 # No default ENTRYPOINT/CMD: this image holds both binaries, and the
 # caller picks which one to run (Nomad's task config.command, or

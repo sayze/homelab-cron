@@ -8,6 +8,23 @@ services:
       - "${ADDR_HOST_PORT:-8080}:8080"
     environment:
       ADDR: ":8080"
+      HOST_ROOT: ${HOST_ROOT:-/host}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-}
+      NOMAD_TOKEN: ${NOMAD_TOKEN:-}
+      DOCKER_SOCK: ${DOCKER_SOCK:-/var/run/docker.sock}
+    volumes:
+      - ${HOST_ROOT_HOST_PATH:-/}:${HOST_ROOT:-/host}:ro
+      # Grants this container the full Docker Engine API of the host
+      # running docker compose — root-equivalent access, same caveat as
+      # homelab-cron.nomad.hcl's volume mount. Only needed to exercise
+      # WebstackVersionCheck's Docker version check locally (directly, or
+      # via GET /job/webstack-version-check); comment out if you'd rather
+      # not expose it in dev.
+      - ${DOCKER_SOCK_HOST_PATH:-/var/run/docker.sock}:${DOCKER_SOCK:-/var/run/docker.sock}
 
   cron:
     build:

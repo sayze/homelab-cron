@@ -5,10 +5,12 @@ homelab's Nomad cluster. Every job is a Go type implementing a small `Job`
 interface — there's no dynamic/config-driven job loading, so adding a job
 means writing Go code and redeploying, not editing a config file.
 
-The service exposes exactly one HTTP route, `GET /health`, used only for
-Nomad/Consul's own health check — it's never routed through Traefik and has
-no other API surface. All real work happens on cron schedules inside the
-process.
+`api` serves two HTTP routes: `GET /health`, used only for Nomad/Consul's
+own health check, and `GET /job/{name}`, letting an operator trigger a
+registered job to run immediately, outside its schedule. Neither route is
+routed through Traefik — both are reachable only on the homelab's
+internal network. All other work happens on cron schedules inside the
+separate `cron` process.
 
 ## Architecture
 
@@ -17,11 +19,11 @@ roots, and a thin scheduler wrapping
 [`robfig/cron`](https://github.com/robfig/cron):
 
 ```
-cmd/api/main.go           entrypoint: /health HTTP server only
-cmd/cron/main.go          entrypoint: builds and runs the cron scheduler
+cmd/api/main.go           entrypoint: GET /health, GET /job/{name}
+cmd/cron/main.go          entrypoint: runs the cron scheduler, no HTTP surface
 internal/config            env var configuration
-internal/server              chi router (GET /health only)
-internal/cron                  the Job interface + Scheduler
+internal/api                  chi router (GET /health, GET /job/{name})
+internal/cron                  the Job interface, Scheduler, and RunOnce
 internal/jobs                    concrete cron.Job implementations
 internal/mailer                  alert email delivery (AWS SES, or a Noop in local dev)
 internal/consul                  reads live dependency versions from Consul
@@ -31,22 +33,24 @@ internal/docker                  reads the local Docker daemon's own live versio
 ```
 
 `api` and `cron` are separate processes (and, in the built Docker image,
-separate binaries) — `api` only ever serves `/health`; `cron` does all the
-actual work and has no HTTP surface. `cron.Scheduler` depends only on the
-`cron.Job` interface, not on any concrete job, so jobs are added by writing
-a new type in `internal/jobs/` and registering it in `cmd/cron/main.go` —
-nothing else needs to change. Each job also declares whether it wants
-alerting (`AlertingEnabled`/`EmailContent`); the scheduler emails the
-result via `internal/mailer` after every run when enabled. See
-[CLAUDE.md](./CLAUDE.md) for the full design rationale.
+separate binaries), each its own composition root: both build the same
+jobs, but `cron` only ever schedules them (via `cron.Scheduler`), and
+`api` only ever runs one on demand (via `cron.RunOnce`, triggered by `GET
+/job/{name}`) — `api` never talks to the `cron` process to do this, it
+just runs its own copy of the job. Jobs are added by writing a new type in
+`internal/jobs/` and constructing it in both `cmd/cron/main.go` and
+`cmd/api/main.go`. Each job also declares whether it wants alerting
+(`AlertingEnabled`/`EmailContent`); `cron.RunOnce` emails the result via
+`internal/mailer` after every run (scheduled or triggered) when enabled.
+See [CLAUDE.md](./CLAUDE.md) for the full design rationale.
 
 ## Running locally
 
 Requires Go 1.24+.
 
 ```
-go run ./cmd/api    # /health server
-go run ./cmd/cron   # scheduler
+go run ./cmd/api    # /health, /job/{name}
+go run ./cmd/cron   # scheduler, no HTTP
 ```
 
 Or via Docker Compose (copy `.env.example` to `.env` first), which runs
@@ -56,7 +60,8 @@ both as separate services from the same image:
 docker compose up --build
 ```
 
-The API listens on `:8080` by default (`ADDR` env var).
+`api`'s `/health`/`/job/{name}` listen on `:8080` by default (`ADDR` env
+var); `cron` has no listen address, since it has no HTTP server.
 
 ## Configuration
 
@@ -67,7 +72,7 @@ rationale:
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `ADDR` | `:8080` | `/health` listen address |
+| `ADDR` | `:8080` | `cmd/api`'s `/health`/`/job/{name}` listen address (unused by `cmd/cron`) |
 | `HOST_ROOT` | `/host` | read-only host filesystem mount, for jobs like `AptUpgradeCheck` |
 | `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` | unset | alert email sender/recipients; unset means `mailer.Noop` (log-only) |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | — | required if the above are set; read by the AWS SDK's own env chain, not this repo's config |

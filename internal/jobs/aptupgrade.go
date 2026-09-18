@@ -32,8 +32,12 @@ func NewAptUpgradeCheck(path string) *AptUpgradeCheck {
 	return &AptUpgradeCheck{path: path, maxAge: 7 * 24 * time.Hour}
 }
 
+// AptUpgradeCheckJobName is this job's Name() — also the {name} path param
+// value for triggering it via GET /job/{name} (see internal/api).
+const AptUpgradeCheckJobName = "apt-upgrade-check"
+
 // Name identifies this job in logs.
-func (*AptUpgradeCheck) Name() string { return "apt-upgrade-check" }
+func (*AptUpgradeCheck) Name() string { return AptUpgradeCheckJobName }
 
 // Schedule runs every morning at 9am.
 func (*AptUpgradeCheck) Schedule() string { return "0 9 * * *" }
