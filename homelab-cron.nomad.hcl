@@ -51,12 +51,9 @@ job "homelab-cron" {
       }
     }
 
-    # api serves /health (for the check above) and GET /job/{name}, which
-    # runs a registered job on demand. Since triggering a job means
-    # actually running it — the same AptUpgradeCheck/WebstackVersionCheck
-    # cron builds — this task needs the same host mount, Docker socket,
-    # and secrets cron does; it's no longer the low-privilege task it was
-    # before /job/{name} existed.
+    # api serves /health and GET /job/{name}. Triggering a job means
+    # actually running it, so this task needs the same host mount, Docker
+    # socket, and secrets cron does.
     task "api" {
       driver = "docker"
 

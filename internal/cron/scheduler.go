@@ -40,7 +40,7 @@ func New(m mailer.Sender, jobs ...Job) (*Scheduler, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	for _, j := range jobs {
-		if _, err := c.AddFunc(j.Schedule(), func() { RunOnce(ctx, m, j) }); err != nil {
+		if _, err := c.AddFunc(j.Schedule(), func() { RunJob(ctx, m, j) }); err != nil {
 			cancel()
 			return nil, fmt.Errorf("register job %q: %w", j.Name(), err)
 		}
@@ -61,14 +61,12 @@ func (s *Scheduler) Stop() {
 	<-s.c.Stop().Done()
 }
 
-// RunOnce executes j.Run, logging its outcome and recovering from a panic
+// RunJob executes j.Run, logging its outcome and recovering from a panic
 // so one broken job can't take the caller down. If j.AlertingEnabled(), it
 // sends j.EmailContent() as an alert email via m once Run returns,
-// regardless of whether Run succeeded. Scheduler uses this for every
-// scheduled tick; internal/api calls it directly to run a job on demand
-// (GET /job/{name}), bypassing Scheduler/robfig-cron entirely since
-// there's no schedule to respect there.
-func RunOnce(ctx context.Context, m mailer.Sender, j Job) {
+// regardless of whether Run succeeded. Exported so internal/api can call
+// it directly for GET /job/{name}, without going through Scheduler.
+func RunJob(ctx context.Context, m mailer.Sender, j Job) {
 	start := time.Now()
 	log.Printf("cron: %s starting", j.Name())
 

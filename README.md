@@ -23,7 +23,7 @@ cmd/api/main.go           entrypoint: GET /health, GET /job/{name}
 cmd/cron/main.go          entrypoint: runs the cron scheduler, no HTTP surface
 internal/config            env var configuration
 internal/api                  chi router (GET /health, GET /job/{name})
-internal/cron                  the Job interface, Scheduler, and RunOnce
+internal/cron                  the Job interface, Scheduler, and RunJob
 internal/jobs                    concrete cron.Job implementations
 internal/mailer                  alert email delivery (AWS SES, or a Noop in local dev)
 internal/consul                  reads live dependency versions from Consul
@@ -35,12 +35,12 @@ internal/docker                  reads the local Docker daemon's own live versio
 `api` and `cron` are separate processes (and, in the built Docker image,
 separate binaries), each its own composition root: both build the same
 jobs, but `cron` only ever schedules them (via `cron.Scheduler`), and
-`api` only ever runs one on demand (via `cron.RunOnce`, triggered by `GET
+`api` only ever runs one on demand (via `cron.RunJob`, triggered by `GET
 /job/{name}`) — `api` never talks to the `cron` process to do this, it
 just runs its own copy of the job. Jobs are added by writing a new type in
 `internal/jobs/` and constructing it in both `cmd/cron/main.go` and
 `cmd/api/main.go`. Each job also declares whether it wants alerting
-(`AlertingEnabled`/`EmailContent`); `cron.RunOnce` emails the result via
+(`AlertingEnabled`/`EmailContent`); `cron.RunJob` emails the result via
 `internal/mailer` after every run (scheduled or triggered) when enabled.
 See [CLAUDE.md](./CLAUDE.md) for the full design rationale.
 

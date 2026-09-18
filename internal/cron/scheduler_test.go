@@ -79,15 +79,15 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestRunOnce_RecoversPanic(t *testing.T) {
+func TestRunJob_RecoversPanic(t *testing.T) {
 	j := testJob{name: "panics", run: func(context.Context) error { panic("boom") }}
 
 	assert.NotPanics(t, func() {
-		RunOnce(context.Background(), mailer.Noop{}, j)
+		RunJob(context.Background(), mailer.Noop{}, j)
 	})
 }
 
-func TestRunOnce_PassesContextThrough(t *testing.T) {
+func TestRunJob_PassesContextThrough(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -101,11 +101,11 @@ func TestRunOnce_PassesContextThrough(t *testing.T) {
 		return nil
 	}}
 
-	RunOnce(ctx, mailer.Noop{}, j)
+	RunJob(ctx, mailer.Noop{}, j)
 	assert.True(t, sawCancel.Load())
 }
 
-func TestRunOnce_Alerting(t *testing.T) {
+func TestRunJob_Alerting(t *testing.T) {
 	tests := []struct {
 		name         string
 		alerting     bool
@@ -129,7 +129,7 @@ func TestRunOnce_Alerting(t *testing.T) {
 				run:          func(context.Context) error { return tt.runErr },
 			}
 
-			RunOnce(context.Background(), m, j)
+			RunJob(context.Background(), m, j)
 
 			if !tt.wantSent {
 				assert.Empty(t, m.sent)

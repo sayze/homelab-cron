@@ -1,9 +1,6 @@
-// Command api is homelab-cron's HTTP entrypoint: it serves GET /health,
-// used only for Nomad/Consul's own health check, and GET /job/{name},
-// which runs a registered cron.Job immediately, outside its normal
-// schedule (see internal/api). It builds the same jobs cmd/cron
-// schedules, but only ever runs one on demand, via cron.RunOnce — never
-// through cron.Scheduler, which is cmd/cron's alone.
+// Command api is homelab-cron's HTTP entrypoint: GET /health for
+// Nomad/Consul's health check, and GET /job/{name} to run a registered
+// job on demand (see internal/api). cmd/cron owns actual scheduling.
 package main
 
 import (
@@ -30,7 +27,7 @@ import (
 func main() {
 	cfg := config.Load()
 
-	m, err := newMailer(cfg)
+	m, err := mailer.New(context.Background(), cfg)
 	if err != nil {
 		log.Fatalf("failed to build mailer: %v", err)
 	}
@@ -44,14 +41,14 @@ func main() {
 		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
 		jobs.NewWebstackVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
 	}
-	byName := make(map[string]cron.Job, len(triggerable))
+	jobsByName := make(map[string]cron.Job, len(triggerable))
 	for _, j := range triggerable {
-		byName[j.Name()] = j
+		jobsByName[j.Name()] = j
 	}
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.New(byName, m),
+		Handler:           api.New(jobsByName, m),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -73,17 +70,4 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("http server shutdown: %v", err)
 	}
-}
-
-// newMailer builds the mailer used to send a triggered job's alert email,
-// if it has one (see internal/api). If ALERT_EMAIL_FROM/ALERT_EMAIL_TO
-// aren't both set, alerting isn't configured and it returns a mailer.Noop
-// that logs instead of sending — this keeps local dev (no AWS
-// credentials) working without error.
-func newMailer(cfg config.Config) (mailer.Sender, error) {
-	if cfg.AlertEmailFrom == "" || len(cfg.AlertEmailTo) == 0 {
-		log.Println("mailer: ALERT_EMAIL_FROM/ALERT_EMAIL_TO not set, alert emails will only be logged")
-		return mailer.Noop{}, nil
-	}
-	return mailer.NewSES(context.Background(), cfg.AlertEmailFrom, cfg.AlertEmailTo)
 }

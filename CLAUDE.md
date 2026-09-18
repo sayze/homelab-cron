@@ -30,7 +30,7 @@ itself doesn't know or care which binary is calling it).
   `cmd/cron`'s alone. Starts `http.ListenAndServe` on `cfg.Addr`. Listens
   for `SIGINT`/`SIGTERM`: on signal, shuts the HTTP server down
   (`srv.Shutdown`, 10s timeout). A `GET /job/{name}` request runs the
-  matching job directly via `cron.RunOnce` (see `internal/cron/scheduler.go`
+  matching job directly via `cron.RunJob` (see `internal/cron/scheduler.go`
   below) — `cmd/api` never talks to the `cmd/cron` process to do this; it
   just runs its own copy of the job.
 - `cmd/cron/main.go` — entrypoint for the scheduler. Loads `config.Load()`,
@@ -51,14 +51,14 @@ itself doesn't know or care which binary is calling it).
 - `internal/api/api.go` — chi router. Middleware: chi's default stack
   (`RequestID`, `Logger`, `Recoverer`). `GET /health` → `200
   {"status":"ok"}`. `GET /job/{name}` → looks `name` up in the
-  `map[string]cron.Job` given to `New`, runs it via `cron.RunOnce` in its
+  `map[string]cron.Job` given to `New`, runs it via `cron.RunJob` in its
   own goroutine (not waiting for it to finish), and returns `202
   {"status":"triggered","job":name}`; `name` not in the map is a `404
   {"error":"job not found"}`. `New(jobs map[string]cron.Job, m
-  mailer.Sender)` takes the jobs and the mailer `RunOnce` uses for a
+  mailer.Sender)` takes the jobs and the mailer `RunJob` uses for a
   triggered job's alert email as explicit dependencies — no interface
   indirection, no dependency on `cron.Scheduler` at all; `internal/api`
-  only needs `cron.Job` and `cron.RunOnce`. No CORS, no auth — nothing
+  only needs `cron.Job` and `cron.RunJob`. No CORS, no auth — nothing
   here is meant to be called by a browser; both routes are only reachable
   on the homelab's internal network (see **Deployment**), not routed
   through Traefik.
@@ -83,12 +83,12 @@ itself doesn't know or care which binary is calling it).
   scheduled run). `Start()` is non-blocking. `Stop()` cancels a context
   shared by all in-flight job runs, then blocks until robfig/cron confirms
   none are still running. Each scheduled tick calls the exported
-  `RunOnce(ctx context.Context, m mailer.Sender, j Job)`, which logs
+  `RunJob(ctx context.Context, m mailer.Sender, j Job)`, which logs
   start/finish/duration, recovers a panic so one broken job can't take the
   caller down, and — once `Run` returns, success or not — sends the job's
   alert email via `m` if `AlertingEnabled()` is true and `EmailContent()`
   is non-empty. The send uses its own 10s timeout independent of `ctx`, so
-  a job cancelled by `Stop()` still gets a chance to alert. `RunOnce` is
+  a job cancelled by `Stop()` still gets a chance to alert. `RunJob` is
   exported specifically so `internal/api` can call it directly for `GET
   /job/{name}` — running a job on demand needs none of `Scheduler`'s
   robfig/cron machinery, just this one function; `internal/cron` doesn't
@@ -109,10 +109,12 @@ caller, driven by each job's `AlertingEnabled`/`EmailContent`.
   requirement that credentials/identifiers be propagated through env vars.
   `from`/`to` are this service's own `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`.
   `from` must be an SES-verified sender address.
-- `noop.go` — `Noop`, logs instead of sending. Both `cmd/api/main.go` and
-  `cmd/cron/main.go` wire this in when `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`
-  aren't both set, so alerting jobs don't error out in local dev without
-  AWS credentials.
+- `noop.go` — `Noop`, logs instead of sending.
+- `factory.go` — `New(ctx, cfg)` builds the `Sender` both `cmd/api/main.go`
+  and `cmd/cron/main.go` use: `SES` if `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO`
+  are both set, otherwise `Noop`, so alerting jobs don't error out in local
+  dev without AWS credentials. Both binaries call this instead of each
+  duplicating the same branch.
 
 ### Consul client (`internal/consul/`)
 
@@ -332,8 +334,8 @@ comment on the volume in `homelab-cron.nomad.hcl`.
   read-only. Defaults to `/host`.
 - `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` — sender and (comma-separated)
   recipient addresses for job alert emails. Both optional; if either is
-  unset, both `cmd/api/main.go` and `cmd/cron/main.go` wire up
-  `mailer.Noop` instead of `mailer.SES` and alerting jobs just log.
+  unset, `mailer.New` (see above) returns `mailer.Noop` instead of
+  `mailer.SES` and alerting jobs just log.
   `ALERT_EMAIL_FROM` must be an SES-verified sender address.
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` — required
   if the above are set. Standard AWS SDK env vars, read directly by

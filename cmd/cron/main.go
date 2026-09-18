@@ -27,7 +27,7 @@ import (
 func main() {
 	cfg := config.Load()
 
-	m, err := newMailer(cfg)
+	m, err := mailer.New(context.Background(), cfg)
 	if err != nil {
 		log.Fatalf("failed to build mailer: %v", err)
 	}
@@ -55,16 +55,4 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("shutting down")
-}
-
-// newMailer builds the mailer used to send alerting jobs' emails. If
-// ALERT_EMAIL_FROM/ALERT_EMAIL_TO aren't both set, alerting isn't
-// configured and it returns a mailer.Noop that logs instead of sending —
-// this keeps local dev (no AWS credentials) working without error.
-func newMailer(cfg config.Config) (mailer.Sender, error) {
-	if cfg.AlertEmailFrom == "" || len(cfg.AlertEmailTo) == 0 {
-		log.Println("mailer: ALERT_EMAIL_FROM/ALERT_EMAIL_TO not set, alert emails will only be logged")
-		return mailer.Noop{}, nil
-	}
-	return mailer.NewSES(context.Background(), cfg.AlertEmailFrom, cfg.AlertEmailTo)
 }
