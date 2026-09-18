@@ -100,8 +100,7 @@ See [CLAUDE.md](./CLAUDE.md) for how to add a new one.
 ## Host filesystem access
 
 This service only ever *reads* the host filesystem — it's given a
-read-only bind mount of the entire host root (the same pattern the
-`homelab` repo's New Relic infra agent job uses), never write access. Jobs
+read-only bind mount of the entire host root, never write access. Jobs
 build paths off `cfg.HostRoot` (env var `HOST_ROOT`, default `/host`)
 rather than hardcoding one. See [CLAUDE.md](./CLAUDE.md) for the full
 mount setup, in both `docker-compose.yml` and `homelab-cron.nomad.hcl`.
