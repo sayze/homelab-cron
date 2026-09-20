@@ -67,7 +67,7 @@ are simply ignored.
   - `Run(ctx context.Context) error` — executes one occurrence. Should
     return promptly once `ctx` is cancelled.
   - `AlertingEnabled() bool` — whether this job's results should be emailed
-    after a run. All jobs currently return `false`.
+    after a run.
   - `EmailContent() string` — the markdown body to send when
     `AlertingEnabled` is true. Sent as the plain-text body of the alert
     email, not rendered to HTML.
@@ -265,9 +265,14 @@ out of sync with what the scheduler actually registers the job under.
   Every check runs on every occurrence, each under its own 10s timeout
   (`checkTimeout`, a var so tests can shrink it), and `Run` returns all
   failures joined, each naming its check — `RunJob` logs it. `AlertingEnabled`
-  is `false` on purpose: at one run a minute, an email per failing run would
-  send hundreds while something stays down. If alerting is wanted, do it on
-  state *changes* (healthy → failing and back), not per run.
+  is `true`, but alerts are throttled to one per `alertThrottle` (10 min): a
+  failing `Run` sets `EmailContent` only if no alert was recorded in the last
+  10 minutes (last-alert time is in memory on the struct, so it resets on
+  restart and is per-process — `cmd/api` and `cmd/cron` throttle
+  independently); otherwise `EmailContent` is empty and the scheduler sends
+  nothing. The time is recorded when the message is set, not when SES
+  confirms the send, so a failed send still starts the window. Healthy runs
+  don't reset it. The clock is the `now` field so tests can control it.
 
 ## Host filesystem access
 
