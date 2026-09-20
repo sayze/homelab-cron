@@ -29,7 +29,7 @@ func TestHealthCheck_Metadata(t *testing.T) {
 	assert.Equal(t, "health-check", job.Name())
 	assert.Equal(t, HealthCheckJobName, job.Name())
 	assert.Equal(t, "* * * * *", job.Schedule())
-	assert.False(t, job.AlertingEnabled())
+	assert.True(t, job.AlertingEnabled())
 	assert.Empty(t, job.EmailContent())
 }
 
@@ -62,7 +62,7 @@ func TestHealthCheck_Run_BoundsEachCheckWithATimeout(t *testing.T) {
 func TestHealthCheck_Run_RunsEveryCheckAndJoinsFailures(t *testing.T) {
 	errA, errB := errors.New("a is down"), errors.New("b is down")
 	var ranB bool
-	job := &HealthCheck{checks: []healthCheckEntry{
+	job := &HealthCheck{now: time.Now, checks: []healthCheckEntry{
 		{name: "a", run: func(context.Context) error { return errA }},
 		{name: "b", run: func(context.Context) error { ranB = true; return errB }},
 	}}
@@ -79,7 +79,7 @@ func TestHealthCheck_Run_CheckTimeoutIsEnforced(t *testing.T) {
 	checkTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { checkTimeout = orig })
 
-	job := &HealthCheck{checks: []healthCheckEntry{
+	job := &HealthCheck{now: time.Now, checks: []healthCheckEntry{
 		{name: "hung", run: func(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
@@ -95,4 +95,103 @@ func TestHealthCheck_Run_CheckTimeoutIsEnforced(t *testing.T) {
 
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Less(t, time.Since(start), 2*time.Second)
+}
+
+func newThrottleJob(pg *fakePostgres, clock *time.Time) *HealthCheck {
+	job := NewHealthCheck(pg)
+	job.now = func() time.Time { return *clock }
+	return job
+}
+
+func TestHealthCheck_Alert_HealthyRunSendsNothing(t *testing.T) {
+	now := time.Now()
+	job := newThrottleJob(&fakePostgres{}, &now)
+
+	require.NoError(t, job.Run(context.Background()))
+
+	assert.Empty(t, job.EmailContent())
+}
+
+func TestHealthCheck_Alert_FirstFailureAlerts(t *testing.T) {
+	now := time.Now()
+	job := newThrottleJob(&fakePostgres{err: errors.New("connection refused")}, &now)
+
+	require.Error(t, job.Run(context.Background()))
+
+	assert.Contains(t, job.EmailContent(), "connection refused")
+	assert.Contains(t, job.EmailContent(), "postgres")
+}
+
+func TestHealthCheck_Alert_ThrottledWithinWindow(t *testing.T) {
+	now := time.Now()
+	job := newThrottleJob(&fakePostgres{err: errors.New("down")}, &now)
+
+	_ = job.Run(context.Background())
+	require.NotEmpty(t, job.EmailContent())
+
+	now = now.Add(alertThrottle - time.Second)
+	_ = job.Run(context.Background())
+
+	assert.Empty(t, job.EmailContent(), "second alert inside the throttle window must be suppressed")
+}
+
+func TestHealthCheck_Alert_AlertsAgainAfterWindow(t *testing.T) {
+	now := time.Now()
+	job := newThrottleJob(&fakePostgres{err: errors.New("down")}, &now)
+
+	_ = job.Run(context.Background())
+	now = now.Add(alertThrottle)
+	_ = job.Run(context.Background())
+
+	assert.NotEmpty(t, job.EmailContent())
+}
+
+func TestHealthCheck_Alert_SuppressedRunsDontExtendWindow(t *testing.T) {
+	now := time.Now()
+	job := newThrottleJob(&fakePostgres{err: errors.New("down")}, &now)
+
+	_ = job.Run(context.Background())
+	for i := 0; i < 9; i++ {
+		now = now.Add(time.Minute)
+		_ = job.Run(context.Background())
+		assert.Empty(t, job.EmailContent())
+	}
+	now = now.Add(time.Minute) // 10 minutes after the first alert
+	_ = job.Run(context.Background())
+
+	assert.NotEmpty(t, job.EmailContent())
+}
+
+func TestHealthCheck_Alert_ThrottleIsPerCheck(t *testing.T) {
+	now := time.Now()
+	var bErr error
+	job := &HealthCheck{
+		now: func() time.Time { return now },
+		checks: []healthCheckEntry{
+			{name: "a", run: func(context.Context) error { return errors.New("a is down") }},
+			{name: "b", run: func(context.Context) error { return bErr }},
+		},
+	}
+
+	_ = job.Run(context.Background())
+	require.Contains(t, job.EmailContent(), "a is down")
+
+	// b starts failing a minute later: a is still throttled, b must alert.
+	now = now.Add(time.Minute)
+	bErr = errors.New("b is down")
+	_ = job.Run(context.Background())
+	assert.Contains(t, job.EmailContent(), "b is down")
+	assert.NotContains(t, job.EmailContent(), "a is down")
+
+	// Next minute both are throttled.
+	now = now.Add(time.Minute)
+	_ = job.Run(context.Background())
+	assert.Empty(t, job.EmailContent())
+
+	// 10 minutes after a's alert, a alerts again but b (alerted a minute
+	// later) is still inside its own window.
+	now = now.Add(alertThrottle - 2*time.Minute)
+	_ = job.Run(context.Background())
+	assert.Contains(t, job.EmailContent(), "a is down")
+	assert.NotContains(t, job.EmailContent(), "b is down")
 }
