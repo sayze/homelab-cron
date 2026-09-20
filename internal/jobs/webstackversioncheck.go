@@ -130,11 +130,13 @@ func (j *WebstackVersionCheck) Run(ctx context.Context) error {
 		currentMajor, err := majorVersion(current)
 		if err != nil {
 			log.Printf("webstack-version-check: %s: bad current version %q: %v", d.name, current, err)
+			lines = append(lines, fmt.Sprintf("- %s: could not parse current version %q (%v)", d.name, current, err))
 			continue
 		}
 		latestMajor, err := majorVersion(latest)
 		if err != nil {
 			log.Printf("webstack-version-check: %s: bad latest version %q: %v", d.name, latest, err)
+			lines = append(lines, fmt.Sprintf("- %s: could not parse latest version %q (%v)", d.name, latest, err))
 			continue
 		}
 
