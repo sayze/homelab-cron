@@ -373,7 +373,7 @@ mount's read-only flag. `internal/docker.HTTPClient` only ever calls `GET
   template and restart the task (`change_mode` defaults to `restart`)
   exactly when the check should be reporting postgres as down. The user and
   database name come from the Nomad file's `db_user`/`db_name` variables
-  (`local`/`homelab`). Unset means the health check fails and logs, which isn't fatal to anything else.
+  (`homelab-cron`/`homelab`). Unset means the health check fails and logs, which isn't fatal to anything else.
 - `DOCKER_SOCK` — path (inside the container) to the Docker Engine API's
   Unix socket, used by `internal/docker.HTTPClient`. Defaults to
   `/var/run/docker.sock`, matching both `homelab-cron.nomad.hcl`'s and

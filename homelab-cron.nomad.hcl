@@ -20,7 +20,7 @@ variable "aws_region" {
 
 variable "db_user" {
   type    = string
-  default = "local"
+  default = "homelab-cron"
 }
 
 variable "db_name" {
