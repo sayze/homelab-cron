@@ -45,10 +45,8 @@ type Config struct {
 	// API's Unix socket, used by internal/docker.HTTPClient.
 	DockerSock string
 
-	// DatabaseURL is the PostgreSQL connection string (a libpq-style URL)
-	// used by internal/postgres.PgxClient. It embeds the database password,
-	// so in production it's rendered into the task's env from Vault by
-	// homelab-cron.nomad.hcl's template block; it's never defaulted.
+	// DatabaseURL is the PostgreSQL connection URL. It embeds the password,
+	// so it's never defaulted.
 	DatabaseURL string
 }
 

@@ -20,7 +20,7 @@ variable "aws_region" {
 
 variable "db_user" {
   type    = string
-  default = "ops"
+  default = "local"
 }
 
 variable "db_name" {
@@ -61,193 +61,84 @@ job "homelab-cron" {
       }
     }
 
-    # api serves /health and GET /job/{name}. Triggering a job means
-    # actually running it, so this task needs the same host mount, Docker
-    # socket, and secrets cron does.
-    task "api" {
-      driver = "docker"
+    # api serves /health and GET /job/{name}; cron runs the scheduled jobs.
+    # Both run jobs, so they share one definition and differ only by
+    # binary.
+    dynamic "task" {
+      for_each = ["api", "cron"]
+      labels   = [task.value]
 
-      vault {
-        role = "nomad-workloads"
-      }
+      content {
+        driver = "docker"
 
-      config {
-        image        = var.image
-        command      = "/usr/local/bin/api"
-        network_mode = "host"
+        vault {
+          role = "nomad-workloads"
+        }
 
-        volumes = [
-          # Read-only bind mount of the entire host filesystem.
-          "/:/host:ro,rslave",
+        config {
+          image        = var.image
+          command      = "/usr/local/bin/${task.value}"
+          network_mode = "host"
 
-          # Docker Engine API socket, for internal/docker's live version
-          # check. NOTE: root-equivalent access, ":ro" doesn't restrict it
-          # (see CLAUDE.md's "Host filesystem access").
-          "/var/run/docker.sock:/var/run/docker.sock",
-        ]
-      }
+          volumes = [
+            # Read-only bind mount of the host filesystem.
+            "/:/host:ro,rslave",
 
-      env {
-        ADDR      = ":8080"
-        HOST_ROOT = "/host"
+            # Docker Engine API socket. Root-equivalent access, ":ro"
+            # doesn't restrict it (see CLAUDE.md).
+            "/var/run/docker.sock:/var/run/docker.sock",
+          ]
+        }
 
-        # DOCKER_SOCK is deliberately unset here: internal/config's own
-        # default ("/var/run/docker.sock") already matches the volume mount
-        # above.
+        # Unset vars (DOCKER_SOCK, CONSUL_ADDR, VAULT_ADDR, NOMAD_ADDR) use
+        # internal/config's defaults, which are correct on the host network.
+        # ADDR is only read by api.
+        env {
+          ADDR             = ":8080"
+          HOST_ROOT        = "/host"
+          ALERT_EMAIL_FROM = var.alert_email_from
+          ALERT_EMAIL_TO   = var.alert_email_to
+          AWS_REGION       = var.aws_region
+        }
 
-        ALERT_EMAIL_FROM = var.alert_email_from
-        ALERT_EMAIL_TO   = var.alert_email_to
-        AWS_REGION       = var.aws_region
+        # AWS SES credentials and the Nomad ACL token.
+        template {
+          data        = <<-EOF
+            {{ with secret "secret/data/homelab/homelab-cron" }}
+            AWS_ACCESS_KEY_ID="{{ .Data.data.aws_access_key_id }}"
+            AWS_SECRET_ACCESS_KEY="{{ .Data.data.aws_secret_access_key }}"
+            NOMAD_TOKEN="{{ .Data.data.nomad_token }}"
+            {{ end }}
+          EOF
+          destination = "secrets/env"
+          env         = true
+        }
 
-        # CONSUL_ADDR/VAULT_ADDR/NOMAD_ADDR are deliberately unset here: on
-        # the host network, internal/config's own defaults
-        # (http://127.0.0.1:8500, :8200, and :4646, Consul's, Vault's, and
-        # Nomad's own local-agent addresses) already resolve correctly.
-      }
+        # DATABASE_URL. "postgres|any" includes unhealthy instances so a
+        # failing postgres doesn't re-render this and restart the task
+        # while the health check needs to report it.
+        template {
+          data        = <<-EOF
+            {{ with secret "secret/data/homelab/postgres" }}
+            {{ $password := .Data.data.password }}
+            {{ range service "postgres|any" }}
+            DATABASE_URL="postgres://${var.db_user}:{{ $password | urlquery }}@{{ .Address }}:{{ .Port }}/${var.db_name}"
+            {{ end }}
+            {{ end }}
+          EOF
+          destination = "secrets/database.env"
+          env         = true
+        }
 
-      # AWS SES credentials for a triggered job's alert email
-      # (internal/mailer), and the ACL token internal/nomad.HTTPClient
-      # sends as Nomad's X-Nomad-Token header to read Nomad's own deployed
-      # version (internal/jobs.WebstackVersionCheck). AWS credentials are
-      # read directly by the AWS SDK's own env chain, not by this
-      # service's own config — see internal/mailer/ses.go and
-      # internal/config/config.go.
-      template {
-        data        = <<-EOF
-          {{ with secret "secret/data/homelab/homelab-cron" }}
-          AWS_ACCESS_KEY_ID="{{ .Data.data.aws_access_key_id }}"
-          AWS_SECRET_ACCESS_KEY="{{ .Data.data.aws_secret_access_key }}"
-          NOMAD_TOKEN="{{ .Data.data.nomad_token }}"
-          {{ end }}
-        EOF
-        destination = "secrets/env"
-        env         = true
-      }
+        logs {
+          max_files     = 3
+          max_file_size = 10
+        }
 
-      # DATABASE_URL for internal/postgres.PgxClient
-      # (internal/jobs.HealthCheck). Built from the postgres job's Vault
-      # password and its Consul-registered address, since its host port is
-      # dynamic. "postgres|any" includes unhealthy instances: the default
-      # filter drops postgres from the result when its own health check
-      # fails, which would change this template and (change_mode defaults to
-      # "restart") restart the task exactly when the check needs to report
-      # postgres as down. urlquery keeps special characters in the password
-      # from breaking the URL.
-      template {
-        data        = <<-EOF
-          {{ with secret "secret/data/homelab/postgres" }}
-          {{ $password := .Data.data.password }}
-          {{ range service "postgres|any" }}
-          DATABASE_URL="postgres://${var.db_user}:{{ $password | urlquery }}@{{ .Address }}:{{ .Port }}/${var.db_name}"
-          {{ end }}
-          {{ end }}
-        EOF
-        destination = "secrets/database.env"
-        env         = true
-      }
-
-      logs {
-        max_files     = 3
-        max_file_size = 10
-      }
-
-      resources {
-        cpu    = 50
-        memory = 64
-      }
-    }
-
-    # cron builds and runs this service's actual cron jobs. It has no HTTP
-    # surface of its own — see the api task above for /health and
-    # GET /job/{name}.
-    task "cron" {
-      driver = "docker"
-
-      vault {
-        role = "nomad-workloads"
-      }
-
-      config {
-        image        = var.image
-        command      = "/usr/local/bin/cron"
-        network_mode = "host"
-
-        volumes = [
-          # Read-only bind mount of the entire host filesystem.
-          "/:/host:ro,rslave",
-
-          # Docker Engine API socket, for internal/docker's live version
-          # check. NOTE: root-equivalent access, ":ro" doesn't restrict it
-          # (see CLAUDE.md's "Host filesystem access").
-          "/var/run/docker.sock:/var/run/docker.sock",
-        ]
-      }
-
-      env {
-        HOST_ROOT = "/host"
-
-        # DOCKER_SOCK is deliberately unset here: internal/config's own
-        # default ("/var/run/docker.sock") already matches the volume mount
-        # above.
-
-        ALERT_EMAIL_FROM = var.alert_email_from
-        ALERT_EMAIL_TO   = var.alert_email_to
-        AWS_REGION       = var.aws_region
-
-        # CONSUL_ADDR/VAULT_ADDR/NOMAD_ADDR are deliberately unset here: on
-        # the host network, internal/config's own defaults
-        # (http://127.0.0.1:8500, :8200, and :4646, Consul's, Vault's, and
-        # Nomad's own local-agent addresses) already resolve correctly.
-      }
-
-      # AWS SES credentials for job alert emails (internal/mailer), and the
-      # ACL token internal/nomad.HTTPClient sends as Nomad's X-Nomad-Token
-      # header to read Nomad's own deployed version
-      # (internal/jobs.WebstackVersionCheck). AWS credentials are read
-      # directly by the AWS SDK's own env chain, not by this service's own
-      # config — see internal/mailer/ses.go and internal/config/config.go.
-      template {
-        data        = <<-EOF
-          {{ with secret "secret/data/homelab/homelab-cron" }}
-          AWS_ACCESS_KEY_ID="{{ .Data.data.aws_access_key_id }}"
-          AWS_SECRET_ACCESS_KEY="{{ .Data.data.aws_secret_access_key }}"
-          NOMAD_TOKEN="{{ .Data.data.nomad_token }}"
-          {{ end }}
-        EOF
-        destination = "secrets/env"
-        env         = true
-      }
-
-      # DATABASE_URL for internal/postgres.PgxClient
-      # (internal/jobs.HealthCheck). Built from the postgres job's Vault
-      # password and its Consul-registered address, since its host port is
-      # dynamic. "postgres|any" includes unhealthy instances: the default
-      # filter drops postgres from the result when its own health check
-      # fails, which would change this template and (change_mode defaults to
-      # "restart") restart the task exactly when the check needs to report
-      # postgres as down. urlquery keeps special characters in the password
-      # from breaking the URL.
-      template {
-        data        = <<-EOF
-          {{ with secret "secret/data/homelab/postgres" }}
-          {{ $password := .Data.data.password }}
-          {{ range service "postgres|any" }}
-          DATABASE_URL="postgres://${var.db_user}:{{ $password | urlquery }}@{{ .Address }}:{{ .Port }}/${var.db_name}"
-          {{ end }}
-          {{ end }}
-        EOF
-        destination = "secrets/database.env"
-        env         = true
-      }
-
-      logs {
-        max_files     = 3
-        max_file_size = 10
-      }
-
-      resources {
-        cpu    = 50
-        memory = 64
+        resources {
+          cpu    = 50
+          memory = 64
+        }
       }
     }
   }

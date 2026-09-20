@@ -21,13 +21,6 @@ type healthCheckEntry struct {
 }
 
 // HealthCheck verifies the homelab's dependencies are up, once a minute.
-// Currently that's one check: PostgreSQL accepts a connection. Every check
-// runs on every occurrence even if an earlier one fails, and Run returns all
-// failures joined, so RunJob logs every dependency that's down, not just the
-// first.
-//
-// AlertingEnabled is false: a per-minute schedule would email once a minute
-// for as long as something stays down, so failures are only logged.
 type HealthCheck struct {
 	checks []healthCheckEntry
 }
