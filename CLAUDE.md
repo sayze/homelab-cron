@@ -265,14 +265,16 @@ out of sync with what the scheduler actually registers the job under.
   Every check runs on every occurrence, each under its own 10s timeout
   (`checkTimeout`, a var so tests can shrink it), and `Run` returns all
   failures joined, each naming its check — `RunJob` logs it. `AlertingEnabled`
-  is `true`, but alerts are throttled to one per `alertThrottle` (10 min): a
-  failing `Run` sets `EmailContent` only if no alert was recorded in the last
-  10 minutes (last-alert time is in memory on the struct, so it resets on
-  restart and is per-process — `cmd/api` and `cmd/cron` throttle
-  independently); otherwise `EmailContent` is empty and the scheduler sends
-  nothing. The time is recorded when the message is set, not when SES
-  confirms the send, so a failed send still starts the window. Healthy runs
-  don't reset it. The clock is the `now` field so tests can control it.
+  is `true`, but alerts are throttled per check to one per `alertThrottle`
+  (10 min): a failing `Run` sets `EmailContent` to just the failing checks
+  that weren't alerted on in the last 10 minutes (so one check alerting
+  doesn't suppress another's), and leaves it empty if there are none, which
+  the scheduler treats as nothing to send. Last-alert times are in memory on
+  the struct (`lastAlerts`, keyed by check name), so they reset on restart
+  and are per-process — `cmd/api` and `cmd/cron` throttle independently. A
+  check's time is recorded when its message is set, not when SES confirms
+  the send, so a failed send still starts the window. Healthy runs don't
+  reset it. The clock is the `now` field so tests can control it.
 
 ## Host filesystem access
 

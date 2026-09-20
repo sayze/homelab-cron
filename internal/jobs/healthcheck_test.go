@@ -161,3 +161,37 @@ func TestHealthCheck_Alert_SuppressedRunsDontExtendWindow(t *testing.T) {
 
 	assert.NotEmpty(t, job.EmailContent())
 }
+
+func TestHealthCheck_Alert_ThrottleIsPerCheck(t *testing.T) {
+	now := time.Now()
+	var bErr error
+	job := &HealthCheck{
+		now: func() time.Time { return now },
+		checks: []healthCheckEntry{
+			{name: "a", run: func(context.Context) error { return errors.New("a is down") }},
+			{name: "b", run: func(context.Context) error { return bErr }},
+		},
+	}
+
+	_ = job.Run(context.Background())
+	require.Contains(t, job.EmailContent(), "a is down")
+
+	// b starts failing a minute later: a is still throttled, b must alert.
+	now = now.Add(time.Minute)
+	bErr = errors.New("b is down")
+	_ = job.Run(context.Background())
+	assert.Contains(t, job.EmailContent(), "b is down")
+	assert.NotContains(t, job.EmailContent(), "a is down")
+
+	// Next minute both are throttled.
+	now = now.Add(time.Minute)
+	_ = job.Run(context.Background())
+	assert.Empty(t, job.EmailContent())
+
+	// 10 minutes after a's alert, a alerts again but b (alerted a minute
+	// later) is still inside its own window.
+	now = now.Add(alertThrottle - 2*time.Minute)
+	_ = job.Run(context.Background())
+	assert.Contains(t, job.EmailContent(), "a is down")
+	assert.NotContains(t, job.EmailContent(), "b is down")
+}

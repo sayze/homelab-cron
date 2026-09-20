@@ -15,8 +15,9 @@ import (
 // so tests can shrink it.
 var checkTimeout = 10 * time.Second
 
-// alertThrottle is the minimum gap between two alert emails from HealthCheck,
-// so a dependency that stays down doesn't send one email per minute.
+// alertThrottle is the minimum gap between two alert emails for the same
+// check, so a dependency that stays down doesn't send one email per minute.
+// It's tracked per check: one check alerting doesn't suppress another's.
 const alertThrottle = 10 * time.Minute
 
 // healthCheckEntry is one named dependency check run by HealthCheck.
@@ -30,9 +31,9 @@ type HealthCheck struct {
 	checks []healthCheckEntry
 	now    func() time.Time // a field so tests can control the clock
 
-	mu        sync.Mutex
-	message   string
-	lastAlert time.Time // when EmailContent last got a message for the scheduler to send; in memory only
+	mu         sync.Mutex
+	message    string
+	lastAlerts map[string]time.Time // check name -> when it was last put in an alert; in memory only
 }
 
 // NewHealthCheck builds a HealthCheck that pings pg.
@@ -56,38 +57,48 @@ func (*HealthCheck) Name() string { return HealthCheckJobName }
 func (*HealthCheck) Schedule() string { return "* * * * *" }
 
 // Run executes every check and returns the failures, if any, joined into one
-// error, which RunJob logs. Each failure names its check. If there are
-// failures and no alert went out in the last alertThrottle, it also records
-// them as the email to send; otherwise it records nothing to send.
+// error, which RunJob logs. Each failure names its check. Failing checks that
+// haven't been alerted on in the last alertThrottle are also recorded as the
+// email to send; if there are none, nothing is recorded to send.
 func (j *HealthCheck) Run(ctx context.Context) error {
 	var errs []error
+	var failed []healthCheckEntry
 	for _, c := range j.checks {
 		if err := runCheck(ctx, c); err != nil {
 			errs = append(errs, fmt.Errorf("check %q: %w", c.name, err))
+			failed = append(failed, c)
 		}
 	}
-	err := errors.Join(errs...)
-	j.recordAlert(err)
-	return err
+	j.recordAlert(failed, errs)
+	return errors.Join(errs...)
 }
 
-// recordAlert sets the pending alert message from err, throttled to one per
-// alertThrottle. A healthy run, or a failing one inside the throttle window,
-// leaves the message empty, so the scheduler sends nothing.
-func (j *HealthCheck) recordAlert(err error) {
+// recordAlert sets the pending alert message from the failing checks,
+// throttled per check: a check is included only if it wasn't included in the
+// last alertThrottle. failed[i] and errs[i] are the same failure. If every
+// failure is inside its check's throttle window (or there are none), the
+// message is empty and the scheduler sends nothing.
+func (j *HealthCheck) recordAlert(failed []healthCheckEntry, errs []error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
-	j.message = ""
-	if err == nil {
-		return
+	if j.lastAlerts == nil {
+		j.lastAlerts = map[string]time.Time{}
 	}
 	now := j.now()
-	if !j.lastAlert.IsZero() && now.Sub(j.lastAlert) < alertThrottle {
-		return
+	var toAlert []error
+	for i, c := range failed {
+		if last, ok := j.lastAlerts[c.name]; ok && now.Sub(last) < alertThrottle {
+			continue
+		}
+		j.lastAlerts[c.name] = now
+		toAlert = append(toAlert, errs[i])
 	}
-	j.lastAlert = now
-	j.message = "Health check failed:\n\n" + err.Error()
+
+	j.message = ""
+	if len(toAlert) > 0 {
+		j.message = "Health check failed:\n\n" + errors.Join(toAlert...).Error()
+	}
 }
 
 func runCheck(ctx context.Context, c healthCheckEntry) error {
@@ -101,7 +112,7 @@ func runCheck(ctx context.Context, c healthCheckEntry) error {
 func (*HealthCheck) AlertingEnabled() bool { return true }
 
 // EmailContent returns the failures from the most recent Run, or "" if that
-// run was healthy or an alert was already sent within alertThrottle.
+// run was healthy or every failure was already alerted within alertThrottle.
 func (j *HealthCheck) EmailContent() string {
 	j.mu.Lock()
 	defer j.mu.Unlock()
