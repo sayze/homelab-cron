@@ -365,7 +365,7 @@ mount's read-only flag. `internal/docker.HTTPClient` only ever calls `GET
   `internal/postgres.PgxClient` (`internal/jobs.HealthCheck`). Contains the
   database password, so it's a secret: never defaulted, and rendered into
   both tasks' env by `homelab-cron.nomad.hcl`'s own `template` block from
-  Vault's `secret/data/homelab/postgres#password` plus the postgres
+  Vault's `secret/data/homelab/homelab-cron#db_password` plus the postgres
   service's Consul address (its host port is dynamic), with the password
   `urlquery`-encoded. That template uses `service "postgres|any"` rather
   than the default filter on purpose: the default drops postgres from the

@@ -119,8 +119,8 @@ job "homelab-cron" {
         # while the health check needs to report it.
         template {
           data        = <<-EOF
-            {{ with secret "secret/data/homelab/postgres" }}
-            {{ $password := .Data.data.password }}
+            {{ with secret "secret/data/homelab/homelab-cron" }}
+            {{ $password := .Data.data.db_password }}
             {{ range service "postgres|any" }}
             DATABASE_URL="postgres://${var.db_user}:{{ $password | urlquery }}@{{ .Address }}:{{ .Port }}/${var.db_name}"
             {{ end }}
