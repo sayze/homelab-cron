@@ -6,6 +6,7 @@ x-shared-env: &shared-env
   AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
   AWS_REGION: ${AWS_REGION:-}
   NOMAD_TOKEN: ${NOMAD_TOKEN:-}
+  DATABASE_URL: ${DATABASE_URL:-}
   DOCKER_SOCK: ${DOCKER_SOCK:-/var/run/docker.sock}
 
 # Grants both containers the full Docker Engine API of the host running

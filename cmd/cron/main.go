@@ -21,6 +21,7 @@ import (
 	"homelab-cron/internal/jobs"
 	"homelab-cron/internal/mailer"
 	"homelab-cron/internal/nomad"
+	"homelab-cron/internal/postgres"
 	"homelab-cron/internal/vault"
 )
 
@@ -41,6 +42,7 @@ func main() {
 		m,
 		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
 		jobs.NewWebstackVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
+		jobs.NewHealthCheck(postgres.NewPgxClient(cfg.DatabaseURL)),
 	)
 	if err != nil {
 		log.Fatalf("failed to build scheduler: %v", err)

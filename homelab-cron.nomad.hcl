@@ -18,6 +18,16 @@ variable "aws_region" {
   default = "ap-southeast-2"
 }
 
+variable "db_user" {
+  type    = string
+  default = "ops"
+}
+
+variable "db_name" {
+  type    = string
+  default = "homelab"
+}
+
 job "homelab-cron" {
   datacenters = ["hl"]
   type        = "service"
@@ -114,6 +124,28 @@ job "homelab-cron" {
         env         = true
       }
 
+      # DATABASE_URL for internal/postgres.PgxClient
+      # (internal/jobs.HealthCheck). Built from the postgres job's Vault
+      # password and its Consul-registered address, since its host port is
+      # dynamic. "postgres|any" includes unhealthy instances: the default
+      # filter drops postgres from the result when its own health check
+      # fails, which would change this template and (change_mode defaults to
+      # "restart") restart the task exactly when the check needs to report
+      # postgres as down. urlquery keeps special characters in the password
+      # from breaking the URL.
+      template {
+        data        = <<-EOF
+          {{ with secret "secret/data/homelab/postgres" }}
+          {{ $password := .Data.data.password }}
+          {{ range service "postgres|any" }}
+          DATABASE_URL="postgres://${var.db_user}:{{ $password | urlquery }}@{{ .Address }}:{{ .Port }}/${var.db_name}"
+          {{ end }}
+          {{ end }}
+        EOF
+        destination = "secrets/database.env"
+        env         = true
+      }
+
       logs {
         max_files     = 3
         max_file_size = 10
@@ -183,6 +215,28 @@ job "homelab-cron" {
           {{ end }}
         EOF
         destination = "secrets/env"
+        env         = true
+      }
+
+      # DATABASE_URL for internal/postgres.PgxClient
+      # (internal/jobs.HealthCheck). Built from the postgres job's Vault
+      # password and its Consul-registered address, since its host port is
+      # dynamic. "postgres|any" includes unhealthy instances: the default
+      # filter drops postgres from the result when its own health check
+      # fails, which would change this template and (change_mode defaults to
+      # "restart") restart the task exactly when the check needs to report
+      # postgres as down. urlquery keeps special characters in the password
+      # from breaking the URL.
+      template {
+        data        = <<-EOF
+          {{ with secret "secret/data/homelab/postgres" }}
+          {{ $password := .Data.data.password }}
+          {{ range service "postgres|any" }}
+          DATABASE_URL="postgres://${var.db_user}:{{ $password | urlquery }}@{{ .Address }}:{{ .Port }}/${var.db_name}"
+          {{ end }}
+          {{ end }}
+        EOF
+        destination = "secrets/database.env"
         env         = true
       }
 

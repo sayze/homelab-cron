@@ -21,6 +21,7 @@ import (
 	"homelab-cron/internal/jobs"
 	"homelab-cron/internal/mailer"
 	"homelab-cron/internal/nomad"
+	"homelab-cron/internal/postgres"
 	"homelab-cron/internal/vault"
 )
 
@@ -40,6 +41,7 @@ func main() {
 	triggerable := []cron.Job{
 		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
 		jobs.NewWebstackVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
+		jobs.NewHealthCheck(postgres.NewPgxClient(cfg.DatabaseURL)),
 	}
 	jobsByName := make(map[string]cron.Job, len(triggerable))
 	for _, j := range triggerable {

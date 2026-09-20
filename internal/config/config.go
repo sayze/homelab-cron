@@ -44,6 +44,12 @@ type Config struct {
 	// DockerSock is the path (inside the container) to the Docker Engine
 	// API's Unix socket, used by internal/docker.HTTPClient.
 	DockerSock string
+
+	// DatabaseURL is the PostgreSQL connection string (a libpq-style URL)
+	// used by internal/postgres.PgxClient. It embeds the database password,
+	// so in production it's rendered into the task's env from Vault by
+	// homelab-cron.nomad.hcl's template block; it's never defaulted.
+	DatabaseURL string
 }
 
 // Load reads homelab-cron's configuration from environment variables,
@@ -59,6 +65,7 @@ func Load() Config {
 		NomadAddr:      getEnv("NOMAD_ADDR", "http://127.0.0.1:4646"),
 		NomadToken:     os.Getenv("NOMAD_TOKEN"),
 		DockerSock:     getEnv("DOCKER_SOCK", "/var/run/docker.sock"),
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
 	}
 }
 
