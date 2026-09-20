@@ -1,5 +1,5 @@
 // Package vault is a minimal read-only client for Vault's HTTP health API.
-// internal/jobs.WebstackVersionCheck uses it to read Vault's own
+// internal/jobs.VersionCheck uses it to read Vault's own
 // actually-deployed version.
 package vault
 

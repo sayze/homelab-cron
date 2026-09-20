@@ -111,7 +111,7 @@ caller, driven by each job's `AlertingEnabled`/`EmailContent`.
 ### Consul client (`internal/consul/`)
 
 `Client` is a one-method interface (`Version(ctx, service string) (string,
-error)`), read by `internal/jobs.WebstackVersionCheck` to look up a
+error)`), read by `internal/jobs.VersionCheck` to look up a
 dependency's actually-deployed version live instead of a hand-maintained
 baseline. `HTTPClient` is the concrete implementation, backed by Consul's
 HTTP health API (`GET /v1/health/service/{name}?passing=true`); it reads
@@ -125,7 +125,7 @@ standing up a Consul server.
 ### Vault client (`internal/vault/`)
 
 `Client` is a one-method interface (`Version(ctx) (string, error)`), read
-by `internal/jobs.WebstackVersionCheck` to look up Vault's own
+by `internal/jobs.VersionCheck` to look up Vault's own
 actually-deployed version live. `HTTPClient` is the concrete
 implementation, backed by Vault's unauthenticated health endpoint
 (`GET /v1/sys/health`); it reads the `version` key off the response body,
@@ -140,7 +140,7 @@ the `Client` interface directly rather than standing up a Vault server.
 ### Nomad client (`internal/nomad/`)
 
 `Client` is a one-method interface (`Version(ctx) (string, error)`), read
-by `internal/jobs.WebstackVersionCheck` to look up Nomad's own
+by `internal/jobs.VersionCheck` to look up Nomad's own
 actually-deployed version live. `HTTPClient` is the concrete
 implementation, backed by Nomad's own agent-self endpoint (`GET
 /v1/agent/self`); it reads the nested `Version` key off the response
@@ -160,7 +160,7 @@ a Nomad agent.
 ### Docker client (`internal/docker/`)
 
 `Client` is a one-method interface (`Version(ctx) (string, error)`), read
-by `internal/jobs.WebstackVersionCheck` to look up the local Docker
+by `internal/jobs.VersionCheck` to look up the local Docker
 daemon's own actually-deployed version live. `HTTPClient` is the concrete
 implementation, backed by the Docker Engine API's `GET /version`; it reads
 the `Version` key off the response body, retrying up to 3 times (1s apart)
@@ -198,7 +198,7 @@ type or registry: `cmd/cron/main.go` passes the same jobs to `cron.New(...)`
 (for scheduling) that `cmd/api/main.go` builds a `map[string]cron.Job`
 from (for on-demand triggering), and both main.go's construct them
 identically, by hand. Each job exports its `Name()` string as a const
-(e.g. `AptUpgradeCheckJobName`, `WebstackVersionCheckJobName`) right next
+(e.g. `AptUpgradeCheckJobName`, `VersionCheckJobName`) right next
 to the `Name()` method that returns it — this is the single source of
 truth for that job's `GET /job/{name}` trigger value, so it can't drift
 out of sync with what the scheduler actually registers the job under.
@@ -216,7 +216,7 @@ out of sync with what the scheduler actually registers the job under.
   to report. Worked example of a job that reads host filesystem state and
   uses per-run alerting state — copy this one for jobs that need to
   read/tail/scan files under the host mount or conditionally alert.
-- `webstackversioncheck.go` — `WebstackVersionCheck`, runs weekly (Monday
+- `versioncheck.go` — `VersionCheck`, runs weekly (Monday
   7am), checks Consul, Vault, Nomad, Docker, Traefik, PostgreSQL, and New
   Relic Infrastructure versions against each project's latest stable
   release, and alerts when any has fallen significantly behind: any
@@ -297,7 +297,7 @@ Jobs needing to look at some host path should build it off `cfg.HostRoot`
 filesystem, not the host's.
 
 The Docker Engine API's Unix socket (`internal/docker`,
-`internal/jobs.WebstackVersionCheck`'s live Docker version check) is the
+`internal/jobs.VersionCheck`'s live Docker version check) is the
 one deliberate exception above: it's bind-mounted separately at
 `cfg.DockerSock` (env var `DOCKER_SOCK`, default `/var/run/docker.sock`),
 not folded into the host-root mount. `:ro` on that mount only stops the
@@ -360,7 +360,7 @@ mount's read-only flag. `internal/docker.HTTPClient` only ever calls `GET
   `secret/data/homelab/homelab-cron#nomad_token` by
   `homelab-cron.nomad.hcl`'s `template` block. Unset in local dev just
   means that one dependency's check fails and is reported rather than
-  fatal (see `webstackversioncheck.go`'s per-dependency error handling).
+  fatal (see `versioncheck.go`'s per-dependency error handling).
 - `DATABASE_URL` — PostgreSQL connection URL, used by
   `internal/postgres.PgxClient` (`internal/jobs.HealthCheck`). Contains the
   database password, so it's a secret: never defaulted, and rendered into
@@ -390,14 +390,14 @@ Two-stage build, producing two static binaries:
    `/usr/local/bin/cron` from `./cmd/cron`.
 2. `FROM scratch` — copies in both binaries and
    `/etc/ssl/certs/ca-certificates.crt` (needed by `cron`'s outbound HTTPS
-   calls to upstream release APIs — see `webstackversioncheck.go`). There's
+   calls to upstream release APIs — see `versioncheck.go`). There's
    deliberately no `ENTRYPOINT`/`CMD`: the image just holds both binaries,
    and the caller (Nomad's task `config.command`, or docker-compose's
    `command:`) picks which one to run.
 
 Build/run — `--entrypoint` selects which binary a one-off `docker run`
 starts. Both binaries need the host mount and Docker socket: `api` needs
-them to actually run a triggered `AptUpgradeCheck`/`WebstackVersionCheck`,
+them to actually run a triggered `AptUpgradeCheck`/`VersionCheck`,
 same as `cron` needs them for the scheduled run:
 ```
 docker build -t homelab-cron:dev .
@@ -405,7 +405,7 @@ docker run --rm -p 8080:8080 -v /:/host:ro -v /var/run/docker.sock:/var/run/dock
 docker run --rm -v /:/host:ro -v /var/run/docker.sock:/var/run/docker.sock --entrypoint /usr/local/bin/cron homelab-cron:dev
 ```
 (the Docker socket mount is only needed to exercise
-`internal/jobs.WebstackVersionCheck`'s live Docker version check.)
+`internal/jobs.VersionCheck`'s live Docker version check.)
 
 For local dev, `docker-compose.yml` builds the same image once and runs it
 twice, as two services (`api` and `cron`, each with its own `command:`

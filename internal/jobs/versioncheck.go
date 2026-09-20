@@ -28,14 +28,14 @@ type dependency struct {
 	fetchLatest func(ctx context.Context) (string, error)
 }
 
-// WebstackVersionCheck compares pinned versions of the homelab stack
+// VersionCheck compares pinned versions of the homelab stack
 // against each project's latest stable release and alerts when any has
 // fallen significantly behind: any major-version bump, or a same-major
 // minor-version drift of minorVersionAlertThreshold or more. A bare major
 // bump always alerts regardless of size — most of this stack's projects
 // (Consul, Vault, Nomad) rarely move their major version at all, so real
 // drift almost always shows up as a minor-version gap instead.
-type WebstackVersionCheck struct {
+type VersionCheck struct {
 	deps []dependency
 
 	mu      sync.Mutex
@@ -48,19 +48,19 @@ type WebstackVersionCheck struct {
 // 5) alerts.
 const minorVersionAlertThreshold = 5
 
-// NewWebstackVersionCheck builds the check against HashiCorp's public
+// NewVersionCheck builds the check against HashiCorp's public
 // releases API (Consul/Vault/Nomad), moby/moby's GitHub releases (Docker
 // Engine), each image's own GitHub releases (Traefik, New Relic
 // Infrastructure), and postgresql.org's published version list (PostgreSQL,
 // whose Docker tag is just the bare major version).
-func NewWebstackVersionCheck(
+func NewVersionCheck(
 	consulClient consul.Client,
 	vaultClient vault.Client,
 	nomadClient nomad.Client,
 	dockerClient docker.Client,
-) *WebstackVersionCheck {
+) *VersionCheck {
 	client := &http.Client{Timeout: 10 * time.Second}
-	return newWebstackVersionCheck([]dependency{
+	return newVersionCheck([]dependency{
 		{
 			name:         "Consul",
 			fetchCurrent: consulAgentVersion(consulClient),
@@ -99,54 +99,54 @@ func NewWebstackVersionCheck(
 	})
 }
 
-func newWebstackVersionCheck(deps []dependency) *WebstackVersionCheck {
-	return &WebstackVersionCheck{deps: deps}
+func newVersionCheck(deps []dependency) *VersionCheck {
+	return &VersionCheck{deps: deps}
 }
 
-// WebstackVersionCheckJobName is this job's Name() — also the {name} path
+// VersionCheckJobName is this job's Name() — also the {name} path
 // param value for triggering it via GET /job/{name} (see internal/api).
-const WebstackVersionCheckJobName = "webstack-version-check"
+const VersionCheckJobName = "version-check"
 
 // Name identifies this job in logs.
-func (*WebstackVersionCheck) Name() string { return WebstackVersionCheckJobName }
+func (*VersionCheck) Name() string { return VersionCheckJobName }
 
 // Schedule runs once a week, Monday at 7am — version drift moves slowly, so
 // there's no need to check more often.
-func (*WebstackVersionCheck) Schedule() string { return "0 7 * * 1" }
+func (*VersionCheck) Schedule() string { return "0 7 * * 1" }
 
 // Run fetches the latest stable release for each tracked dependency and
 // records any that have fallen significantly behind their pinned version —
-// see WebstackVersionCheck's doc comment for what counts as significant. A
+// see VersionCheck's doc comment for what counts as significant. A
 // dependency whose latest-version fetch fails is reported rather than
 // failing the whole run, so one flaky upstream API can't hide a real
 // version gap in another dependency.
-func (j *WebstackVersionCheck) Run(ctx context.Context) error {
+func (j *VersionCheck) Run(ctx context.Context) error {
 	var lines []string
 
 	for _, d := range j.deps {
 		current, err := d.fetchCurrent(ctx)
 		if err != nil {
-			log.Printf("webstack-version-check: %s: failed to fetch current version: %v", d.name, err)
+			log.Printf("version-check: %s: failed to fetch current version: %v", d.name, err)
 			lines = append(lines, fmt.Sprintf("- %s: could not check current version (%v)", d.name, err))
 			continue
 		}
 
 		latest, err := d.fetchLatest(ctx)
 		if err != nil {
-			log.Printf("webstack-version-check: %s: failed to fetch latest version: %v", d.name, err)
+			log.Printf("version-check: %s: failed to fetch latest version: %v", d.name, err)
 			lines = append(lines, fmt.Sprintf("- %s: could not check latest version (%v)", d.name, err))
 			continue
 		}
 
 		currentMajor, currentMinor, err := parseVersion(current)
 		if err != nil {
-			log.Printf("webstack-version-check: %s: bad current version %q: %v", d.name, current, err)
+			log.Printf("version-check: %s: bad current version %q: %v", d.name, current, err)
 			lines = append(lines, fmt.Sprintf("- %s: could not parse current version %q (%v)", d.name, current, err))
 			continue
 		}
 		latestMajor, latestMinor, err := parseVersion(latest)
 		if err != nil {
-			log.Printf("webstack-version-check: %s: bad latest version %q: %v", d.name, latest, err)
+			log.Printf("version-check: %s: bad latest version %q: %v", d.name, latest, err)
 			lines = append(lines, fmt.Sprintf("- %s: could not parse latest version %q (%v)", d.name, latest, err))
 			continue
 		}
@@ -162,19 +162,19 @@ func (j *WebstackVersionCheck) Run(ctx context.Context) error {
 	return nil
 }
 
-func (j *WebstackVersionCheck) setMessage(msg string) {
+func (j *VersionCheck) setMessage(msg string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.message = msg
 }
 
 // AlertingEnabled is always true for this job.
-func (*WebstackVersionCheck) AlertingEnabled() bool { return true }
+func (*VersionCheck) AlertingEnabled() bool { return true }
 
 // EmailContent returns the dependencies found to be a major version behind
 // on the most recent Run, or "" if none were — the scheduler treats an
 // empty EmailContent as nothing to send.
-func (j *WebstackVersionCheck) EmailContent() string {
+func (j *VersionCheck) EmailContent() string {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.message
@@ -320,7 +320,7 @@ func getJSON(ctx context.Context, client *http.Client, url string, out any) erro
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Printf("webstack-version-check: closing response body from %s: %v", url, cerr)
+			log.Printf("version-check: closing response body from %s: %v", url, cerr)
 		}
 	}()
 

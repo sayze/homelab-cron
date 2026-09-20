@@ -1,5 +1,5 @@
 // Package nomad is a minimal read-only client for Nomad's HTTP API.
-// internal/jobs.WebstackVersionCheck uses it to read Nomad's own
+// internal/jobs.VersionCheck uses it to read Nomad's own
 // actually-deployed version.
 package nomad
 

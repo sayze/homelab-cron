@@ -41,7 +41,7 @@ func main() {
 	scheduler, err := cron.New(
 		m,
 		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
-		jobs.NewWebstackVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
+		jobs.NewVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
 		jobs.NewHealthCheck(postgres.NewPgxClient(cfg.DatabaseURL)),
 	)
 	if err != nil {
