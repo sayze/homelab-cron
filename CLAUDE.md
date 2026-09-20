@@ -173,6 +173,23 @@ default, so there's no `addr`/`*http.Client` pair to inject: instead
 itself against a real Unix socket listener in a temp dir rather than a
 fake host/port server, so the dialer is actually covered.
 
+### Postgres client (`internal/postgres/`)
+
+`Client` is a one-method interface (`Ping(ctx) error`), used by
+`internal/jobs.HealthCheck` to verify the homelab database accepts
+connections. `PgxClient` is the concrete implementation, backed by
+`github.com/jackc/pgx/v5`; `NewPgxClient(connString)` takes a libpq-style URL
+(`cfg.DatabaseURL`, env var `DATABASE_URL`). Each `Ping` opens a fresh
+connection, pings, and closes it — no pool, since the check runs once a
+minute and a pool would hide a database that has stopped accepting *new*
+connections. An empty or unparseable connection string is a failed `Ping`,
+not a startup error. pgx redacts the password from its own errors, so they're
+safe to log. pgx is pinned at v5.8.0 (the newest release that supports Go
+1.24, which the Dockerfile builds with) — bumping it past that needs the
+Dockerfile's Go version and `go.mod`'s `go` directive bumped too. Tests use
+no live database: the empty/unparseable/refused-connection paths need none,
+and `internal/jobs` fakes the `Client` interface.
+
 ### Jobs (`internal/jobs/`)
 
 Each file is one `Job` implementation, independent of the others. Copy an
@@ -239,6 +256,18 @@ out of sync with what the scheduler actually registers the job under.
   version (`dependency.fetchCurrent`) and the latest version
   (`dependency.fetchLatest`) for testability, instead of hitting real APIs
   in unit tests.
+
+- `healthcheck.go` — `HealthCheck`, runs every minute (`* * * * *`), and
+  checks the homelab's dependencies are up. Currently one check: PostgreSQL
+  accepts a connection (`postgres.Client.Ping`). Takes its dependency as a
+  constructor arg (`NewHealthCheck(pg postgres.Client)`). Holds a slice of
+  named checks; add a dependency by appending an entry in `NewHealthCheck`.
+  Every check runs on every occurrence, each under its own 10s timeout
+  (`checkTimeout`, a var so tests can shrink it), and `Run` returns all
+  failures joined, each naming its check — `RunJob` logs it. `AlertingEnabled`
+  is `false` on purpose: at one run a minute, an email per failing run would
+  send hundreds while something stays down. If alerting is wanted, do it on
+  state *changes* (healthy → failing and back), not per run.
 
 ## Host filesystem access
 
@@ -332,6 +361,19 @@ mount's read-only flag. `internal/docker.HTTPClient` only ever calls `GET
   `homelab-cron.nomad.hcl`'s `template` block. Unset in local dev just
   means that one dependency's check fails and is reported rather than
   fatal (see `webstackversioncheck.go`'s per-dependency error handling).
+- `DATABASE_URL` — PostgreSQL connection URL, used by
+  `internal/postgres.PgxClient` (`internal/jobs.HealthCheck`). Contains the
+  database password, so it's a secret: never defaulted, and rendered into
+  both tasks' env by `homelab-cron.nomad.hcl`'s own `template` block from
+  Vault's `secret/data/homelab/homelab-cron#db_password` plus the postgres
+  service's Consul address (its host port is dynamic), with the password
+  `urlquery`-encoded. That template uses `service "postgres|any"` rather
+  than the default filter on purpose: the default drops postgres from the
+  result when its own health check fails, which would re-render the
+  template and restart the task (`change_mode` defaults to `restart`)
+  exactly when the check should be reporting postgres as down. The user and
+  database name come from the Nomad file's `db_user`/`db_name` variables
+  (`homelab-cron`/`homelab`). Unset means the health check fails and logs, which isn't fatal to anything else.
 - `DOCKER_SOCK` — path (inside the container) to the Docker Engine API's
   Unix socket, used by `internal/docker.HTTPClient`. Defaults to
   `/var/run/docker.sock`, matching both `homelab-cron.nomad.hcl`'s and
@@ -373,7 +415,8 @@ then `docker compose up --build`.
 ## Deployment (`homelab-cron.nomad.hcl`)
 
 `type = "service"` with one group holding two tasks, `api` and `cron`,
-both from the same `var.image` (see **Docker** above) but selecting their
+generated from a single `dynamic "task"` block (so their volumes, env,
+`vault`, and `template` stanzas can't drift apart), both from the same `var.image` (see **Docker** above) but selecting their
 binary via the docker driver's `config.command` (`/usr/local/bin/api` or
 `/usr/local/bin/cron`). The group's `network { mode = "host" }` declares
 one static port, `http` (8080), which only `api` listens on (`cron` has
