@@ -98,7 +98,7 @@ func NewVersionCheck(
 		},
 		{
 			name:         "Fluent Bit",
-			fetchCurrent: consulCurrent(consulClient, "fluent-bit"),
+			fetchCurrent: consulCurrent(consulClient, "fluentbit"),
 			fetchLatest:  githubLatestTag(client, "fluent", "fluent-bit"),
 		},
 	})
