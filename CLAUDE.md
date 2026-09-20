@@ -217,8 +217,8 @@ out of sync with what the scheduler actually registers the job under.
   uses per-run alerting state — copy this one for jobs that need to
   read/tail/scan files under the host mount or conditionally alert.
 - `versioncheck.go` — `VersionCheck`, runs weekly (Monday
-  7am), checks Consul, Vault, Nomad, Docker, Traefik, PostgreSQL, and New
-  Relic Infrastructure versions against each project's latest stable
+  7am), checks Consul, Vault, Nomad, Docker, Traefik, PostgreSQL, New
+  Relic Infrastructure, and Fluent Bit versions against each project's latest stable
   release, and alerts when any has fallen significantly behind: any
   major-version bump, or a same-major minor-version drift of
   `minorVersionAlertThreshold` (5) or more — e.g. 1.34.1 vs 1.35.0 is fine,
@@ -227,15 +227,15 @@ out of sync with what the scheduler actually registers the job under.
   most real drift for this stack shows up as a minor-version gap instead.
   Latest-version sources: HashiCorp's releases API (Consul/Vault/Nomad), a
   project's own GitHub releases (Docker via moby/moby, Traefik, New Relic
-  Infrastructure), and postgresql.org's published version list (PostgreSQL
+  Infrastructure, Fluent Bit via fluent/fluent-bit), and postgresql.org's published version list (PostgreSQL
   — its Docker tag is just the bare major version, e.g. `postgres:16`).
   `dockerLatest` strips a `docker-` prefix off moby/moby's release tag
   before handing it to `parseVersion` — that repo tags Docker Engine's own
   releases `docker-vX.Y.Z`, distinct from its other release trains
   (`client/vX.Y.Z`, `api/vX.Y.Z`). No dependency has a hand-maintained
   pinned baseline: every `dependency`'s current version is fetched live.
-  Traefik, PostgreSQL, and New Relic Infrastructure read theirs from Consul
-  service meta (`dependency.fetchCurrent`, built by `consulCurrent` — see
+  Traefik, PostgreSQL, New Relic Infrastructure, and Fluent Bit (Consul
+  service `fluent-bit`) read theirs from Consul service meta (`dependency.fetchCurrent`, built by `consulCurrent` — see
   `internal/consul`), since their Nomad jobs register their image tag as
   `version` there. Consul, Vault, Nomad, and Docker instead read their own
   current version from their own endpoints: `consulAgentVersion`,
