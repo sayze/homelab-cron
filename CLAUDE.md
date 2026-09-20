@@ -219,13 +219,18 @@ out of sync with what the scheduler actually registers the job under.
 - `webstackversioncheck.go` — `WebstackVersionCheck`, runs weekly (Monday
   7am), checks Consul, Vault, Nomad, Docker, Traefik, PostgreSQL, and New
   Relic Infrastructure versions against each project's latest stable
-  release, and alerts when any has fallen a major version behind.
+  release, and alerts when any has fallen significantly behind: any
+  major-version bump, or a same-major minor-version drift of
+  `minorVersionAlertThreshold` (5) or more — e.g. 1.34.1 vs 1.35.0 is fine,
+  1.34.1 vs 1.39.0 alerts. A bare major bump always alerts regardless of
+  size, since Consul/Vault/Nomad rarely move their major version at all —
+  most real drift for this stack shows up as a minor-version gap instead.
   Latest-version sources: HashiCorp's releases API (Consul/Vault/Nomad), a
   project's own GitHub releases (Docker via moby/moby, Traefik, New Relic
   Infrastructure), and postgresql.org's published version list (PostgreSQL
   — its Docker tag is just the bare major version, e.g. `postgres:16`).
   `dockerLatest` strips a `docker-` prefix off moby/moby's release tag
-  before handing it to `majorVersion` — that repo tags Docker Engine's own
+  before handing it to `parseVersion` — that repo tags Docker Engine's own
   releases `docker-vX.Y.Z`, distinct from its other release trains
   (`client/vX.Y.Z`, `api/vX.Y.Z`). No dependency has a hand-maintained
   pinned baseline: every `dependency`'s current version is fetched live.

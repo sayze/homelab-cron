@@ -30,13 +30,23 @@ type dependency struct {
 
 // WebstackVersionCheck compares pinned versions of the homelab stack
 // against each project's latest stable release and alerts when any has
-// fallen a major version behind.
+// fallen significantly behind: any major-version bump, or a same-major
+// minor-version drift of minorVersionAlertThreshold or more. A bare major
+// bump always alerts regardless of size — most of this stack's projects
+// (Consul, Vault, Nomad) rarely move their major version at all, so real
+// drift almost always shows up as a minor-version gap instead.
 type WebstackVersionCheck struct {
 	deps []dependency
 
 	mu      sync.Mutex
 	message string
 }
+
+// minorVersionAlertThreshold is how many minor versions behind (within the
+// same major version) counts as significant drift worth alerting on, e.g.
+// 1.34.1 vs 1.35.0 (a diff of 1) is fine, but 1.34.1 vs 1.39.0 (a diff of
+// 5) alerts.
+const minorVersionAlertThreshold = 5
 
 // NewWebstackVersionCheck builds the check against HashiCorp's public
 // releases API (Consul/Vault/Nomad), moby/moby's GitHub releases (Docker
@@ -105,7 +115,8 @@ func (*WebstackVersionCheck) Name() string { return WebstackVersionCheckJobName 
 func (*WebstackVersionCheck) Schedule() string { return "0 7 * * 1" }
 
 // Run fetches the latest stable release for each tracked dependency and
-// records any that are a major version behind their pinned version. A
+// records any that have fallen significantly behind their pinned version —
+// see WebstackVersionCheck's doc comment for what counts as significant. A
 // dependency whose latest-version fetch fails is reported rather than
 // failing the whole run, so one flaky upstream API can't hide a real
 // version gap in another dependency.
@@ -127,21 +138,23 @@ func (j *WebstackVersionCheck) Run(ctx context.Context) error {
 			continue
 		}
 
-		currentMajor, err := majorVersion(current)
+		currentMajor, currentMinor, err := parseVersion(current)
 		if err != nil {
 			log.Printf("webstack-version-check: %s: bad current version %q: %v", d.name, current, err)
 			lines = append(lines, fmt.Sprintf("- %s: could not parse current version %q (%v)", d.name, current, err))
 			continue
 		}
-		latestMajor, err := majorVersion(latest)
+		latestMajor, latestMinor, err := parseVersion(latest)
 		if err != nil {
 			log.Printf("webstack-version-check: %s: bad latest version %q: %v", d.name, latest, err)
 			lines = append(lines, fmt.Sprintf("- %s: could not parse latest version %q (%v)", d.name, latest, err))
 			continue
 		}
 
-		if latestMajor > currentMajor {
-			lines = append(lines, fmt.Sprintf("- %s: current %s is a major version behind latest stable %s", d.name, current, latest))
+		behind := latestMajor > currentMajor ||
+			(latestMajor == currentMajor && latestMinor-currentMinor >= minorVersionAlertThreshold)
+		if behind {
+			lines = append(lines, fmt.Sprintf("- %s: current %s is significantly behind latest stable %s", d.name, current, latest))
 		}
 	}
 
@@ -317,11 +330,13 @@ func getJSON(ctx context.Context, client *http.Client, url string, out any) erro
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-// majorVersion extracts the leading major version number from a version
-// string, tolerating a "v" prefix (GitHub release tags), a leading
+// parseVersion extracts the leading major and minor version numbers from a
+// version string, tolerating a "v" prefix (GitHub release tags), a leading
 // "epoch:" (Debian/apt package versions, e.g. Docker's
-// "5:28.5.2-1~ubuntu.24.04~noble"), and any "-"/"~"/"+" suffix.
-func majorVersion(v string) (int, error) {
+// "5:28.5.2-1~ubuntu.24.04~noble"), and any "-"/"~"/"+" suffix. A version
+// with no minor component (PostgreSQL's bare major-version tags, e.g. "16")
+// gets a minor of 0.
+func parseVersion(v string) (major, minor int, err error) {
 	v = strings.TrimPrefix(v, "v")
 	if i := strings.LastIndex(v, ":"); i != -1 {
 		v = v[i+1:]
@@ -330,10 +345,19 @@ func majorVersion(v string) (int, error) {
 		v = v[:i]
 	}
 
-	major, _, _ := strings.Cut(v, ".")
-	n, err := strconv.Atoi(major)
+	majorPart, rest, _ := strings.Cut(v, ".")
+	major, err = strconv.Atoi(majorPart)
 	if err != nil {
-		return 0, fmt.Errorf("parse major version from %q: %w", v, err)
+		return 0, 0, fmt.Errorf("parse major version from %q: %w", v, err)
 	}
-	return n, nil
+	if rest == "" {
+		return major, 0, nil
+	}
+
+	minorPart, _, _ := strings.Cut(rest, ".")
+	minor, err = strconv.Atoi(minorPart)
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse minor version from %q: %w", v, err)
+	}
+	return major, minor, nil
 }
