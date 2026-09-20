@@ -1,5 +1,5 @@
 // Package docker is a minimal read-only client for the Docker Engine API.
-// internal/jobs.WebstackVersionCheck uses it to read the Docker daemon's own
+// internal/jobs.VersionCheck uses it to read the Docker daemon's own
 // actually-deployed version.
 package docker
 

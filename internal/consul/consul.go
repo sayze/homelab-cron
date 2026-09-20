@@ -1,5 +1,5 @@
 // Package consul is a minimal read-only client for Consul's HTTP API.
-// internal/jobs.WebstackVersionCheck uses it to read a cluster service's
+// internal/jobs.VersionCheck uses it to read a cluster service's
 // actually-deployed version from Consul service meta, and Consul's own
 // agent version from its health/self-info endpoint.
 package consul

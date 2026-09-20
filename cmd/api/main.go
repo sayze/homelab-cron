@@ -40,7 +40,7 @@ func main() {
 
 	triggerable := []cron.Job{
 		jobs.NewAptUpgradeCheck(filepath.Join(cfg.HostRoot, "var/log/apt/upgrade.log")),
-		jobs.NewWebstackVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
+		jobs.NewVersionCheck(consulClient, vaultClient, nomadClient, dockerClient),
 		jobs.NewHealthCheck(postgres.NewPgxClient(cfg.DatabaseURL)),
 	}
 	jobsByName := make(map[string]cron.Job, len(triggerable))

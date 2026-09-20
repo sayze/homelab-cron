@@ -12,8 +12,8 @@ x-shared-env: &shared-env
 # Grants both containers the full Docker Engine API of the host running
 # docker compose — root-equivalent access, same caveat as
 # homelab-cron.nomad.hcl's volume mount. Only needed to exercise
-# WebstackVersionCheck's Docker version check locally (directly, or via
-# GET /job/webstack-version-check); comment out if you'd rather not
+# VersionCheck's Docker version check locally (directly, or via
+# GET /job/version-check); comment out if you'd rather not
 # expose it in dev.
 x-shared-volumes: &shared-volumes
   - ${HOST_ROOT_HOST_PATH:-/}:${HOST_ROOT:-/host}:ro

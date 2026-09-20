@@ -15,7 +15,7 @@ import (
 	"homelab-cron/internal/vault"
 )
 
-func TestWebstackVersionCheck_Run(t *testing.T) {
+func TestVersionCheck_Run(t *testing.T) {
 	tests := []struct {
 		name        string
 		deps        []dependency
@@ -151,7 +151,7 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			job := newWebstackVersionCheck(tt.deps)
+			job := newVersionCheck(tt.deps)
 
 			err := job.Run(context.Background())
 
@@ -169,11 +169,11 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 	}
 }
 
-func TestWebstackVersionCheck_Run_DoesNotLeakPreviousAlert(t *testing.T) {
+func TestVersionCheck_Run_DoesNotLeakPreviousAlert(t *testing.T) {
 	deps := []dependency{
 		{name: "Consul", fetchCurrent: fakeCurrent("1.22.2", nil), fetchLatest: fakeLatest("2.0.4", nil)},
 	}
-	job := newWebstackVersionCheck(deps)
+	job := newVersionCheck(deps)
 
 	assert.NoError(t, job.Run(context.Background()))
 	assert.NotEmpty(t, job.EmailContent())
