@@ -51,7 +51,7 @@ const minorVersionAlertThreshold = 5
 // NewVersionCheck builds the check against HashiCorp's public
 // releases API (Consul/Vault/Nomad), moby/moby's GitHub releases (Docker
 // Engine), each image's own GitHub releases (Traefik, New Relic
-// Infrastructure), and postgresql.org's published version list (PostgreSQL,
+// Infrastructure, Fluent Bit), and postgresql.org's published version list (PostgreSQL,
 // whose Docker tag is just the bare major version).
 func NewVersionCheck(
 	consulClient consul.Client,
@@ -95,6 +95,11 @@ func NewVersionCheck(
 			name:         "New Relic Infrastructure",
 			fetchCurrent: consulCurrent(consulClient, "newrelic"),
 			fetchLatest:  githubLatestTag(client, "newrelic", "infrastructure-agent"),
+		},
+		{
+			name:         "Fluent Bit",
+			fetchCurrent: consulCurrent(consulClient, "fluent-bit"),
+			fetchLatest:  githubLatestTag(client, "fluent", "fluent-bit"),
 		},
 	})
 }
