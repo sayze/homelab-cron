@@ -84,6 +84,22 @@ func TestWebstackVersionCheck_Run(t *testing.T) {
 			wantSubstr:  []string{"Vault", "could not check"},
 		},
 		{
+			name: "unparseable current version is reported",
+			deps: []dependency{
+				{name: "Traefik", fetchCurrent: fakeCurrent("latest", nil), fetchLatest: fakeLatest("v3.7.13", nil)},
+			},
+			wantContent: true,
+			wantSubstr:  []string{"Traefik", "could not parse current version", "latest"},
+		},
+		{
+			name: "unparseable latest version is reported",
+			deps: []dependency{
+				{name: "Traefik", fetchCurrent: fakeCurrent("v3.7.13", nil), fetchLatest: fakeLatest("nightly", nil)},
+			},
+			wantContent: true,
+			wantSubstr:  []string{"Traefik", "could not parse latest version", "nightly"},
+		},
+		{
 			name: "only the dependency that's behind is reported",
 			deps: []dependency{
 				{name: "Consul", fetchCurrent: fakeCurrent("2.0.4", nil), fetchLatest: fakeLatest("2.0.4", nil)},
