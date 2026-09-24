@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,9 +12,12 @@ import (
 
 	"homelab-cron/internal/consul"
 	"homelab-cron/internal/docker"
+	"homelab-cron/internal/logging"
 	"homelab-cron/internal/nomad"
 	"homelab-cron/internal/vault"
 )
+
+var versionLog = logging.New(VersionCheckJobName)
 
 // dependency is one component of the homelab stack this job tracks: its
 // current version (or how to fetch it) and how to fetch the latest stable
@@ -131,27 +133,27 @@ func (j *VersionCheck) Run(ctx context.Context) error {
 	for _, d := range j.deps {
 		current, err := d.fetchCurrent(ctx)
 		if err != nil {
-			log.Printf("version-check: %s: failed to fetch current version: %v", d.name, err)
+			versionLog.Warn("failed to fetch current version", "dependency", d.name, "error", err)
 			lines = append(lines, fmt.Sprintf("- %s: could not check current version (%v)", d.name, err))
 			continue
 		}
 
 		latest, err := d.fetchLatest(ctx)
 		if err != nil {
-			log.Printf("version-check: %s: failed to fetch latest version: %v", d.name, err)
+			versionLog.Warn("failed to fetch latest version", "dependency", d.name, "error", err)
 			lines = append(lines, fmt.Sprintf("- %s: could not check latest version (%v)", d.name, err))
 			continue
 		}
 
 		currentMajor, currentMinor, err := parseVersion(current)
 		if err != nil {
-			log.Printf("version-check: %s: bad current version %q: %v", d.name, current, err)
+			versionLog.Warn("bad current version", "dependency", d.name, "version", current, "error", err)
 			lines = append(lines, fmt.Sprintf("- %s: could not parse current version %q (%v)", d.name, current, err))
 			continue
 		}
 		latestMajor, latestMinor, err := parseVersion(latest)
 		if err != nil {
-			log.Printf("version-check: %s: bad latest version %q: %v", d.name, latest, err)
+			versionLog.Warn("bad latest version", "dependency", d.name, "version", latest, "error", err)
 			lines = append(lines, fmt.Sprintf("- %s: could not parse latest version %q (%v)", d.name, latest, err))
 			continue
 		}
@@ -325,7 +327,7 @@ func getJSON(ctx context.Context, client *http.Client, url string, out any) erro
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Printf("version-check: closing response body from %s: %v", url, cerr)
+			versionLog.Error("closing response body", "url", url, "error", cerr)
 		}
 	}()
 

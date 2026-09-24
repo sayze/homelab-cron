@@ -6,14 +6,20 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"runtime/debug"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"homelab-cron/internal/cron"
+	"homelab-cron/internal/logging"
 	"homelab-cron/internal/mailer"
 )
+
+var log = logging.New("http")
 
 // New builds the chi router. jobs (keyed by Name()) and m back GET
 // /job/{name} — see handleTriggerJob. Both may be nil/empty, in which
@@ -22,8 +28,8 @@ func New(jobs map[string]cron.Job, m mailer.Sender) chi.Router {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(requestLogger)
+	r.Use(recoverer)
 
 	r.Get("/health", handleHealth)
 	r.Get("/job/{name}", handleTriggerJob(jobs, m))
@@ -60,4 +66,53 @@ func handleTriggerJob(jobs map[string]cron.Job, m mailer.Sender) http.HandlerFun
 		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered", "job": name})
 	}
+}
+
+// requestLogger logs one JSON line per request once it completes. It
+// replaces chi's middleware.Logger, which writes plain text.
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+		defer func() {
+			log.Info("request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", ww.Status(),
+				"bytes", ww.BytesWritten(),
+				"duration_ms", time.Since(start).Milliseconds(),
+				"request_id", middleware.GetReqID(r.Context()),
+				"remote_addr", r.RemoteAddr,
+			)
+		}()
+
+		next.ServeHTTP(ww, r)
+	})
+}
+
+// recoverer turns a handler panic into a 500 and a JSON error log line. It
+// replaces chi's middleware.Recoverer, which prints a plain-text stack
+// trace straight to stderr.
+func recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			if rec == http.ErrAbortHandler {
+				// net/http's own signal to abort the response; let it through.
+				panic(rec)
+			}
+			log.Error("handler panicked",
+				"panic", fmt.Sprint(rec),
+				"stack", string(debug.Stack()),
+				"request_id", middleware.GetReqID(r.Context()),
+			)
+			w.WriteHeader(http.StatusInternalServerError)
+		}()
+
+		next.ServeHTTP(w, r)
+	})
 }

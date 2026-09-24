@@ -7,11 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"homelab-cron/internal/logging"
 )
+
+var log = logging.New("nomad")
 
 // maxAttempts and retryDelay bound Version's retries against transient
 // Nomad/network failures: up to 3 attempts, 1s apart. retryDelay is a var
@@ -101,7 +104,7 @@ func (c *HTTPClient) version(ctx context.Context) (string, error) {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Printf("nomad: closing response body for agent self: %v", cerr)
+			log.Error("closing response body", "endpoint", "agent/self", "error", cerr)
 		}
 	}()
 
