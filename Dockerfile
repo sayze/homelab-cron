@@ -16,8 +16,8 @@ RUN CGO_ENABLED=0 go build -o /out/cron ./cmd/cron
 FROM scratch
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=build /out/api /usr/local/bin/api
-COPY --from=build /out/cron /usr/local/bin/cron
+COPY --from=build /out/api /usr/local/bin/homelab-cron-api
+COPY --from=build /out/cron /usr/local/bin/homelab-cron
 
 EXPOSE 8080
 
