@@ -27,7 +27,7 @@ import (
 )
 
 func main() {
-	logger.Init("api")
+	logger.Init("homelab-cron-api")
 
 	cfg := config.Load()
 

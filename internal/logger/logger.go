@@ -35,7 +35,7 @@ var (
 )
 
 // Init builds the process-wide logger, tagging every line with component
-// (the service it's logging for, e.g. "api" or "cron"), and routes output
+// (the service it's logging for, e.g. "homelab-cron-api"), and routes output
 // from the standard library's log package (used by some dependencies)
 // through it too. Call it once, first thing in main. Only the first call
 // (including the implicit one the first Info/Warn/Error makes) has any

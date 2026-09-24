@@ -69,8 +69,9 @@ whatever key/value pairs the call site adds (`"job"`, `"error"`,
 handler (no third-party logging library).
 
 There's one process-wide logger, built behind a `sync.Once`: each
-`main.go` calls `logger.Init("api")`/`logger.Init("cron")` once, first
-thing, which sets `component` to that service and also routes stray
+`main.go` calls `logger.Init` once, first thing — `"homelab-cron-api"` in
+`cmd/api`, `"homelab-cron"` in `cmd/cron` — which sets `component` to that
+service and also routes stray
 output from dependencies using the standard `log` package through it.
 Every other package just calls the package-level `logger.Info`/`Warn`/
 `Error(msg string, args ...any)` — no per-package logger variables.
