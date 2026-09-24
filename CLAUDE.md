@@ -59,20 +59,20 @@ are simply ignored.
   nothing here is meant to be called by a browser; both routes are only
   reachable on the homelab's internal network (see **Deployment**).
 
-### Logging (`internal/logging/`)
+### Logging (`internal/logger/`)
 
 All log output is one JSON object per line, on stdout, so upstream
-(Nomad → Fluent Bit) can parse it consistently. Every line has
-`timestamp` (RFC 3339), `level`, `message`, and `component`, plus
+(Nomad → Fluent Bit) can parse it consistently. Every line has slog's
+own `time` (RFC 3339), `level`, and `msg` keys, plus `component`, plus
 whatever key/value pairs the call site adds (`"job"`, `"error"`,
 `"duration_ms"`, …). Backed by the standard library's `log/slog` JSON
 handler (no third-party logging library).
 
 There's one process-wide logger, built behind a `sync.Once`: each
-`main.go` calls `logging.Init("api")`/`logging.Init("cron")` once, first
+`main.go` calls `logger.Init("api")`/`logger.Init("cron")` once, first
 thing, which sets `component` to that service and also routes stray
 output from dependencies using the standard `log` package through it.
-Every other package just calls the package-level `logging.Info`/`Warn`/
+Every other package just calls the package-level `logger.Info`/`Warn`/
 `Error(msg string, args ...any)` — no per-package logger variables.
 Logging before `Init` (e.g. from unit tests) lazily builds it with
 component `homelab-cron`; only the first `Init` takes effect. Since

@@ -1,7 +1,7 @@
-// Package logging is the one place homelab-cron's log output is shaped, so
+// Package logger is the one place homelab-cron's log output is shaped, so
 // everything upstream (Nomad → Fluent Bit) sees the same JSON structure:
 //
-//	{"timestamp":"...","level":"INFO","message":"...","component":"cron",...}
+//	{"time":"...","level":"INFO","msg":"...","component":"cron",...}
 //
 // plus any key/value pairs passed alongside the message. It wraps the
 // standard library's log/slog JSON handler rather than a third-party
@@ -10,7 +10,7 @@
 // There's a single process-wide logger: each main.go calls Init once with
 // its component, and every other package logs through the package-level
 // Info/Warn/Error functions.
-package logging
+package logger
 
 import (
 	"io"
@@ -20,12 +20,9 @@ import (
 	"sync"
 )
 
-// Keys every log line carries.
-const (
-	TimestampKey = "timestamp"
-	MessageKey   = "message"
-	ComponentKey = "component"
-)
+// ComponentKey is the key every log line carries the service's name
+// under, alongside slog's own "time", "level" and "msg".
+const ComponentKey = "component"
 
 // defaultComponent tags lines logged before (or without) Init — e.g. from
 // unit tests, which never run a main.go.
@@ -45,7 +42,7 @@ var (
 // effect.
 func Init(component string) {
 	once.Do(func() {
-		h := slog.NewJSONHandler(out, &slog.HandlerOptions{ReplaceAttr: renameKeys})
+		h := slog.NewJSONHandler(out, nil)
 		std = slog.New(h).With(ComponentKey, component)
 		slog.SetDefault(std)
 		log.SetFlags(0)
@@ -57,21 +54,6 @@ func Init(component string) {
 func get() *slog.Logger {
 	Init(defaultComponent)
 	return std
-}
-
-// renameKeys swaps slog's default "time"/"msg" keys for this service's
-// "timestamp"/"message".
-func renameKeys(groups []string, a slog.Attr) slog.Attr {
-	if len(groups) > 0 {
-		return a
-	}
-	switch a.Key {
-	case slog.TimeKey:
-		a.Key = TimestampKey
-	case slog.MessageKey:
-		a.Key = MessageKey
-	}
-	return a
 }
 
 // Info logs msg with optional key/value pairs, e.g.

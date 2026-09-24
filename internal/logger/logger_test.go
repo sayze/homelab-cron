@@ -1,6 +1,6 @@
 //go:build unit
 
-package logging
+package logger
 
 import (
 	"bytes"
@@ -54,14 +54,12 @@ func TestLog_JSONShape(t *testing.T) {
 
 			got := decodeLines(t, buf)[0]
 			assert.Equal(t, "test-component", got[ComponentKey])
-			assert.Equal(t, "hello", got[MessageKey])
+			assert.Equal(t, "hello", got["msg"])
 			assert.Equal(t, tt.level, got["level"])
 			assert.Equal(t, "x", got["job"])
-			assert.NotContains(t, got, "msg")
-			assert.NotContains(t, got, "time")
 
-			ts, ok := got[TimestampKey].(string)
-			require.True(t, ok, "timestamp should be a string")
+			ts, ok := got["time"].(string)
+			require.True(t, ok, "time should be a string")
 			_, err := time.Parse(time.RFC3339Nano, ts)
 			assert.NoError(t, err)
 		})

@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -15,7 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"homelab-cron/internal/cron"
-	"homelab-cron/internal/logging"
+	"homelab-cron/internal/logger"
 	"homelab-cron/internal/mailer"
 )
 
@@ -74,7 +75,7 @@ func requestLogger(next http.Handler) http.Handler {
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 		defer func() {
-			logging.Info("request",
+			logger.Info("request",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", ww.Status(),
@@ -99,11 +100,11 @@ func recoverer(next http.Handler) http.Handler {
 			if rec == nil {
 				return
 			}
-			if rec == http.ErrAbortHandler {
+			if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 				// net/http's own signal to abort the response; let it through.
 				panic(rec)
 			}
-			logging.Error("handler panicked",
+			logger.Error("handler panicked",
 				"panic", fmt.Sprint(rec),
 				"stack", string(debug.Stack()),
 				"request_id", middleware.GetReqID(r.Context()),

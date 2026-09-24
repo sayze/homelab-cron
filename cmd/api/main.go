@@ -19,7 +19,7 @@ import (
 	"homelab-cron/internal/cron"
 	"homelab-cron/internal/docker"
 	"homelab-cron/internal/jobs"
-	"homelab-cron/internal/logging"
+	"homelab-cron/internal/logger"
 	"homelab-cron/internal/mailer"
 	"homelab-cron/internal/nomad"
 	"homelab-cron/internal/postgres"
@@ -27,13 +27,13 @@ import (
 )
 
 func main() {
-	logging.Init("api")
+	logger.Init("api")
 
 	cfg := config.Load()
 
 	m, err := mailer.New(context.Background(), mailer.Config{From: cfg.AlertEmailFrom, To: cfg.AlertEmailTo})
 	if err != nil {
-		logging.Error("failed to build mailer", "error", err)
+		logger.Error("failed to build mailer", "error", err)
 		os.Exit(1)
 	}
 
@@ -62,19 +62,19 @@ func main() {
 	defer stop()
 
 	go func() {
-		logging.Info("homelab-cron api listening", "addr", cfg.Addr)
+		logger.Info("homelab-cron api listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logging.Error("http server failed", "error", err)
+			logger.Error("http server failed", "error", err)
 			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	logging.Info("shutting down")
+	logger.Info("shutting down")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logging.Error("http server shutdown failed", "error", err)
+		logger.Error("http server shutdown failed", "error", err)
 	}
 }

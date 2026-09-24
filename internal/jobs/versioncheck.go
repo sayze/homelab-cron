@@ -12,7 +12,7 @@ import (
 
 	"homelab-cron/internal/consul"
 	"homelab-cron/internal/docker"
-	"homelab-cron/internal/logging"
+	"homelab-cron/internal/logger"
 	"homelab-cron/internal/nomad"
 	"homelab-cron/internal/vault"
 )
@@ -131,27 +131,27 @@ func (j *VersionCheck) Run(ctx context.Context) error {
 	for _, d := range j.deps {
 		current, err := d.fetchCurrent(ctx)
 		if err != nil {
-			logging.Warn("failed to fetch current version", "job", VersionCheckJobName, "dependency", d.name, "error", err)
+			logger.Warn("failed to fetch current version", "job", VersionCheckJobName, "dependency", d.name, "error", err)
 			lines = append(lines, fmt.Sprintf("- %s: could not check current version (%v)", d.name, err))
 			continue
 		}
 
 		latest, err := d.fetchLatest(ctx)
 		if err != nil {
-			logging.Warn("failed to fetch latest version", "job", VersionCheckJobName, "dependency", d.name, "error", err)
+			logger.Warn("failed to fetch latest version", "job", VersionCheckJobName, "dependency", d.name, "error", err)
 			lines = append(lines, fmt.Sprintf("- %s: could not check latest version (%v)", d.name, err))
 			continue
 		}
 
 		currentMajor, currentMinor, err := parseVersion(current)
 		if err != nil {
-			logging.Warn("bad current version", "job", VersionCheckJobName, "dependency", d.name, "version", current, "error", err)
+			logger.Warn("bad current version", "job", VersionCheckJobName, "dependency", d.name, "version", current, "error", err)
 			lines = append(lines, fmt.Sprintf("- %s: could not parse current version %q (%v)", d.name, current, err))
 			continue
 		}
 		latestMajor, latestMinor, err := parseVersion(latest)
 		if err != nil {
-			logging.Warn("bad latest version", "job", VersionCheckJobName, "dependency", d.name, "version", latest, "error", err)
+			logger.Warn("bad latest version", "job", VersionCheckJobName, "dependency", d.name, "version", latest, "error", err)
 			lines = append(lines, fmt.Sprintf("- %s: could not parse latest version %q (%v)", d.name, latest, err))
 			continue
 		}
@@ -325,7 +325,7 @@ func getJSON(ctx context.Context, client *http.Client, url string, out any) erro
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			logging.Error("closing response body", "job", VersionCheckJobName, "url", url, "error", cerr)
+			logger.Error("closing response body", "job", VersionCheckJobName, "url", url, "error", cerr)
 		}
 	}()
 

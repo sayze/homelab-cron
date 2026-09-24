@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"homelab-cron/internal/logging"
+	"homelab-cron/internal/logger"
 )
 
 // AptUpgradeCheck verifies that unattended upgrades are actually running by
@@ -49,7 +49,7 @@ func (j *AptUpgradeCheck) Run(context.Context) error {
 	info, err := os.Stat(j.path)
 	if os.IsNotExist(err) {
 		msg := fmt.Sprintf("%s does not exist — apt upgrades may not be running", j.path)
-		logging.Warn(msg, "job", AptUpgradeCheckJobName, "path", j.path)
+		logger.Warn(msg, "job", AptUpgradeCheckJobName, "path", j.path)
 		j.setMessage(msg)
 		return nil
 	}
@@ -59,7 +59,7 @@ func (j *AptUpgradeCheck) Run(context.Context) error {
 
 	if age := time.Since(info.ModTime()); age > j.maxAge {
 		msg := fmt.Sprintf("%s last modified %s ago (older than %s) — apt upgrades may not be running", j.path, age.Round(time.Hour), j.maxAge)
-		logging.Warn(msg, "job", AptUpgradeCheckJobName, "path", j.path, "age", age.Round(time.Hour).String())
+		logger.Warn(msg, "job", AptUpgradeCheckJobName, "path", j.path, "age", age.Round(time.Hour).String())
 		j.setMessage(msg)
 		return nil
 	}

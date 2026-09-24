@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"homelab-cron/internal/logging"
+	"homelab-cron/internal/logger"
 )
 
 // maxAttempts and retryDelay bound Version's retries against transient
@@ -102,7 +102,7 @@ func (c *HTTPClient) version(ctx context.Context) (string, error) {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			logging.Error("closing nomad response body", "endpoint", "agent/self", "error", cerr)
+			logger.Error("closing nomad response body", "endpoint", "agent/self", "error", cerr)
 		}
 	}()
 

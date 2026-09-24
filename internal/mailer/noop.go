@@ -3,7 +3,7 @@ package mailer
 import (
 	"context"
 
-	"homelab-cron/internal/logging"
+	"homelab-cron/internal/logger"
 )
 
 // Noop logs alert emails instead of sending them. Used when SES isn't
@@ -13,6 +13,6 @@ type Noop struct{}
 
 // Send logs the email instead of sending it.
 func (Noop) Send(_ context.Context, subject, body string) error {
-	logging.Info("alerting not configured, dropping email", "subject", subject, "bytes", len(body))
+	logger.Info("alerting not configured, dropping email", "subject", subject, "bytes", len(body))
 	return nil
 }

@@ -7,7 +7,7 @@ import (
 
 	robfigcron "github.com/robfig/cron/v3"
 
-	"homelab-cron/internal/logging"
+	"homelab-cron/internal/logger"
 	"homelab-cron/internal/mailer"
 )
 
@@ -68,19 +68,19 @@ func (s *Scheduler) Stop() {
 // it directly for GET /job/{name}, without going through Scheduler.
 func RunJob(ctx context.Context, m mailer.Sender, j Job) {
 	start := time.Now()
-	logging.Info("job starting", "job", j.Name())
+	logger.Info("job starting", "job", j.Name())
 
 	defer func() {
 		if r := recover(); r != nil {
-			logging.Error("job panicked", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "panic", fmt.Sprint(r))
+			logger.Error("job panicked", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "panic", fmt.Sprint(r))
 		}
 	}()
 
 	err := j.Run(ctx)
 	if err != nil {
-		logging.Error("job failed", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "error", err)
+		logger.Error("job failed", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "error", err)
 	} else {
-		logging.Info("job finished", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds())
+		logger.Info("job finished", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds())
 	}
 
 	sendAlert(m, j)
@@ -103,7 +103,7 @@ func sendAlert(m mailer.Sender, j Job) {
 
 	subject := fmt.Sprintf("homelab-cron: %s alert", j.Name())
 	if err := m.Send(ctx, subject, body); err != nil {
-		logging.Error("alert email failed", "job", j.Name(), "error", err)
+		logger.Error("alert email failed", "job", j.Name(), "error", err)
 	}
 }
 
@@ -116,5 +116,5 @@ type cronLogger struct{}
 func (cronLogger) Info(string, ...any) {}
 
 func (cronLogger) Error(err error, msg string, keysAndValues ...any) {
-	logging.Error(msg, append(keysAndValues, "error", err)...)
+	logger.Error(msg, append(keysAndValues, "error", err)...)
 }
