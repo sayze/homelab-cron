@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"homelab-cron/internal/consul"
-	"homelab-cron/internal/docker"
-	"homelab-cron/internal/nomad"
-	"homelab-cron/internal/vault"
+	"github.com/sayze/homelab-cron/internal/consul"
+	"github.com/sayze/homelab-cron/internal/docker"
+	"github.com/sayze/homelab-cron/internal/nomad"
+	"github.com/sayze/homelab-cron/internal/vault"
 )
 
 func TestVersionCheck_Run(t *testing.T) {

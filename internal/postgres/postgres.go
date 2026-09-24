@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"homelab-cron/internal/logger"
+	"github.com/sayze/homelab-cron/internal/logger"
 )
 
 // closeTimeout bounds how long Ping waits for the connection to close

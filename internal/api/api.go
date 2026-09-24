@@ -15,9 +15,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"homelab-cron/internal/cron"
-	"homelab-cron/internal/logger"
-	"homelab-cron/internal/mailer"
+	"github.com/sayze/homelab-cron/internal/cron"
+	"github.com/sayze/homelab-cron/internal/logger"
+	"github.com/sayze/homelab-cron/internal/mailer"
 )
 
 // New builds the chi router. jobs (keyed by Name()) and m back GET

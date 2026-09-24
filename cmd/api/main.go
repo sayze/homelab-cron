@@ -13,17 +13,17 @@ import (
 	"syscall"
 	"time"
 
-	"homelab-cron/internal/api"
-	"homelab-cron/internal/config"
-	"homelab-cron/internal/consul"
-	"homelab-cron/internal/cron"
-	"homelab-cron/internal/docker"
-	"homelab-cron/internal/jobs"
-	"homelab-cron/internal/logger"
-	"homelab-cron/internal/mailer"
-	"homelab-cron/internal/nomad"
-	"homelab-cron/internal/postgres"
-	"homelab-cron/internal/vault"
+	"github.com/sayze/homelab-cron/internal/api"
+	"github.com/sayze/homelab-cron/internal/config"
+	"github.com/sayze/homelab-cron/internal/consul"
+	"github.com/sayze/homelab-cron/internal/cron"
+	"github.com/sayze/homelab-cron/internal/docker"
+	"github.com/sayze/homelab-cron/internal/jobs"
+	"github.com/sayze/homelab-cron/internal/logger"
+	"github.com/sayze/homelab-cron/internal/mailer"
+	"github.com/sayze/homelab-cron/internal/nomad"
+	"github.com/sayze/homelab-cron/internal/postgres"
+	"github.com/sayze/homelab-cron/internal/vault"
 )
 
 func main() {

@@ -3,11 +3,11 @@ package mailer
 import (
 	"context"
 
-	"homelab-cron/internal/logger"
+	"github.com/sayze/homelab-cron/internal/logger"
 )
 
 // Config configures New. It's this package's own small config, not
-// homelab-cron/internal/config.Config — mailer only needs these two
+// github.com/sayze/homelab-cron/internal/config.Config — mailer only needs these two
 // fields, so it doesn't depend on the whole service's config.
 type Config struct {
 	// From is the SES-verified sender address. To is the list of

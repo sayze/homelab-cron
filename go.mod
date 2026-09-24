@@ -1,4 +1,4 @@
-module homelab-cron
+module github.com/sayze/homelab-cron
 
 go 1.24.1
 

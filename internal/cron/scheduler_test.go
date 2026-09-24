@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"homelab-cron/internal/mailer"
+	"github.com/sayze/homelab-cron/internal/mailer"
 )
 
 // testJob is a minimal Job implementation for exercising the scheduler
