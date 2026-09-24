@@ -8,10 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"homelab-cron/internal/logger"
 )
 
 // maxAttempts and retryDelay bound Version's retries against transient
@@ -111,7 +112,7 @@ func (c *HTTPClient) version(ctx context.Context, service string) (string, error
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Printf("consul: closing response body for service %q: %v", service, cerr)
+			logger.Error("closing consul response body", "service", service, "error", cerr)
 		}
 	}()
 
@@ -157,7 +158,7 @@ func (c *HTTPClient) agentVersion(ctx context.Context) (string, error) {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Printf("consul: closing response body for agent self: %v", cerr)
+			logger.Error("closing consul response body", "endpoint", "agent/self", "error", cerr)
 		}
 	}()
 

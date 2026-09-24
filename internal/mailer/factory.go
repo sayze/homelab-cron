@@ -2,7 +2,8 @@ package mailer
 
 import (
 	"context"
-	"log"
+
+	"homelab-cron/internal/logger"
 )
 
 // Config configures New. It's this package's own small config, not
@@ -22,7 +23,7 @@ type Config struct {
 // keeps local dev (no AWS credentials) working without error.
 func New(ctx context.Context, cfg Config) (Sender, error) {
 	if cfg.From == "" || len(cfg.To) == 0 {
-		log.Println("mailer: ALERT_EMAIL_FROM/ALERT_EMAIL_TO not set, alert emails will only be logged")
+		logger.Warn("ALERT_EMAIL_FROM/ALERT_EMAIL_TO not set, alert emails will only be logged")
 		return Noop{}, nil
 	}
 	return NewSES(ctx, cfg.From, cfg.To)

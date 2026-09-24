@@ -45,9 +45,10 @@ are simply ignored.
   `ADDR` is read only by `cmd/api` — `cmd/cron` has no HTTP server.
   Deliberately does *not* read AWS credentials/region — those go straight
   to the AWS SDK's own env chain (see `internal/mailer`).
-- `internal/api/api.go` — chi router. Middleware: chi's default stack
-  (`RequestID`, `Logger`, `Recoverer`). `GET /health` → `200
-  {"status":"ok"}`. `GET /job/{name}` → looks `name` up in the
+- `internal/api/api.go` — chi router. Middleware: chi's `RequestID`, then
+  this package's own `requestLogger` and `recoverer` — JSON replacements
+  for chi's `Logger`/`Recoverer`, which write plain text (see **Logging**).
+  `GET /health` → `200 {"status":"ok"}`. `GET /job/{name}` → looks `name` up in the
   `map[string]cron.Job` given to `New`, runs it via `cron.RunJob` in its
   own goroutine (not waiting for it to finish), and returns `202
   {"status":"triggered","job":name}`; `name` not in the map is a `404
@@ -57,6 +58,31 @@ are simply ignored.
   indirection, no dependency on `cron.Scheduler`. No CORS, no auth —
   nothing here is meant to be called by a browser; both routes are only
   reachable on the homelab's internal network (see **Deployment**).
+
+### Logging (`internal/logger/`)
+
+All log output is one JSON object per line, on stdout, so upstream
+(Nomad → Fluent Bit) can parse it consistently. Every line has slog's
+own `time` (RFC 3339), `level`, and `msg` keys, plus `component`, plus
+whatever key/value pairs the call site adds (`"job"`, `"error"`,
+`"duration_ms"`, …). Backed by the standard library's `log/slog` JSON
+handler (no third-party logging library).
+
+There's one process-wide logger, built behind a `sync.Once`: each
+`main.go` calls `logger.Init` once, first thing — `"homelab-cron-api"` in
+`cmd/api`, `"homelab-cron"` in `cmd/cron` — which sets `component` to that
+service and also routes stray
+output from dependencies using the standard `log` package through it.
+Every other package just calls the package-level `logger.Info`/`Warn`/
+`Error(msg string, args ...any)` — no per-package logger variables.
+Logging before `Init` (e.g. from unit tests) lazily builds it with
+component `homelab-cron`; only the first `Init` takes effect. Since
+`component` is the service, put which package/job a line came from in the
+message or a field (e.g. `"closing consul response body"`, `"job"`).
+robfig/cron's own logging goes through `cronLogger` in `scheduler.go`
+(errors only). Don't import the standard `log` package — keep the message
+short and constant, and put variable data in key/value args rather than
+formatting it into the message.
 
 ### Cron scheduling (`internal/cron/`)
 

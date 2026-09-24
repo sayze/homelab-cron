@@ -3,11 +3,11 @@ package cron
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	robfigcron "github.com/robfig/cron/v3"
 
+	"homelab-cron/internal/logger"
 	"homelab-cron/internal/mailer"
 )
 
@@ -36,7 +36,7 @@ func New(m mailer.Sender, jobs ...Job) (*Scheduler, error) {
 		return nil, fmt.Errorf("load scheduler location %q: %w", schedulerLocation, err)
 	}
 
-	c := robfigcron.New(robfigcron.WithLocation(loc))
+	c := robfigcron.New(robfigcron.WithLocation(loc), robfigcron.WithLogger(cronLogger{}))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	for _, j := range jobs {
@@ -68,19 +68,19 @@ func (s *Scheduler) Stop() {
 // it directly for GET /job/{name}, without going through Scheduler.
 func RunJob(ctx context.Context, m mailer.Sender, j Job) {
 	start := time.Now()
-	log.Printf("cron: %s starting", j.Name())
+	logger.Info("job starting", "job", j.Name())
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("cron: %s panicked after %s: %v", j.Name(), time.Since(start), r)
+			logger.Error("job panicked", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "panic", fmt.Sprint(r))
 		}
 	}()
 
 	err := j.Run(ctx)
 	if err != nil {
-		log.Printf("cron: %s failed after %s: %v", j.Name(), time.Since(start), err)
+		logger.Error("job failed", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "error", err)
 	} else {
-		log.Printf("cron: %s finished in %s", j.Name(), time.Since(start))
+		logger.Info("job finished", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds())
 	}
 
 	sendAlert(m, j)
@@ -103,6 +103,18 @@ func sendAlert(m mailer.Sender, j Job) {
 
 	subject := fmt.Sprintf("homelab-cron: %s alert", j.Name())
 	if err := m.Send(ctx, subject, body); err != nil {
-		log.Printf("cron: %s alert email failed: %v", j.Name(), err)
+		logger.Error("alert email failed", "job", j.Name(), "error", err)
 	}
+}
+
+// cronLogger adapts robfig/cron's own logging to this service's JSON
+// logging — robfig's default writes plain text to stdout. Like robfig's
+// default (non-verbose) logger, it drops Info: those are per-tick
+// "wake"/"run" noise, and RunJob already logs each run.
+type cronLogger struct{}
+
+func (cronLogger) Info(string, ...any) {}
+
+func (cronLogger) Error(err error, msg string, keysAndValues ...any) {
+	logger.Error(msg, append(keysAndValues, "error", err)...)
 }

@@ -7,10 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"time"
+
+	"homelab-cron/internal/logger"
 )
 
 // maxAttempts and retryDelay bound Version's retries against transient
@@ -92,7 +93,7 @@ func (c *HTTPClient) version(ctx context.Context) (string, error) {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Printf("docker: closing response body for version: %v", cerr)
+			logger.Error("closing docker response body", "endpoint", "version", "error", cerr)
 		}
 	}()
 

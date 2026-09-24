@@ -7,10 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"homelab-cron/internal/logger"
 )
 
 // maxAttempts and retryDelay bound Version's retries against transient
@@ -79,7 +80,7 @@ func (c *HTTPClient) version(ctx context.Context) (string, error) {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Printf("vault: closing response body for sys/health: %v", cerr)
+			logger.Error("closing vault response body", "endpoint", "sys/health", "error", cerr)
 		}
 	}()
 

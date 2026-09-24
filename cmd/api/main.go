@@ -6,8 +6,8 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -19,6 +19,7 @@ import (
 	"homelab-cron/internal/cron"
 	"homelab-cron/internal/docker"
 	"homelab-cron/internal/jobs"
+	"homelab-cron/internal/logger"
 	"homelab-cron/internal/mailer"
 	"homelab-cron/internal/nomad"
 	"homelab-cron/internal/postgres"
@@ -26,11 +27,14 @@ import (
 )
 
 func main() {
+	logger.Init("homelab-cron-api")
+
 	cfg := config.Load()
 
 	m, err := mailer.New(context.Background(), mailer.Config{From: cfg.AlertEmailFrom, To: cfg.AlertEmailTo})
 	if err != nil {
-		log.Fatalf("failed to build mailer: %v", err)
+		logger.Error("failed to build mailer", "error", err)
+		os.Exit(1)
 	}
 
 	consulClient, vaultClient, nomadClient, dockerClient := consul.NewHTTPClient(cfg.ConsulAddr, &http.Client{Timeout: 10 * time.Second}),
@@ -58,18 +62,19 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Printf("homelab-cron api listening on %s", cfg.Addr)
+		logger.Info("homelab-cron api listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("http server: %v", err)
+			logger.Error("http server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("shutting down")
+	logger.Info("shutting down")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("http server shutdown: %v", err)
+		logger.Error("http server shutdown failed", "error", err)
 	}
 }
