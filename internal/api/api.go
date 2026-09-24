@@ -19,8 +19,6 @@ import (
 	"homelab-cron/internal/mailer"
 )
 
-var log = logging.New("http")
-
 // New builds the chi router. jobs (keyed by Name()) and m back GET
 // /job/{name} — see handleTriggerJob. Both may be nil/empty, in which
 // case every /job/{name} request 404s.
@@ -76,7 +74,7 @@ func requestLogger(next http.Handler) http.Handler {
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 		defer func() {
-			log.Info("request",
+			logging.Info("request",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", ww.Status(),
@@ -105,7 +103,7 @@ func recoverer(next http.Handler) http.Handler {
 				// net/http's own signal to abort the response; let it through.
 				panic(rec)
 			}
-			log.Error("handler panicked",
+			logging.Error("handler panicked",
 				"panic", fmt.Sprint(rec),
 				"stack", string(debug.Stack()),
 				"request_id", middleware.GetReqID(r.Context()),

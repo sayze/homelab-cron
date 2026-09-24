@@ -11,8 +11,6 @@ import (
 	"homelab-cron/internal/mailer"
 )
 
-var log = logging.New("scheduler")
-
 // alertTimeout bounds how long sending a job's alert email may take. It's
 // deliberately independent of the job's own (cancellable-on-shutdown) ctx,
 // so a job cancelled mid-run by Stop() still gets a chance to send its
@@ -70,19 +68,19 @@ func (s *Scheduler) Stop() {
 // it directly for GET /job/{name}, without going through Scheduler.
 func RunJob(ctx context.Context, m mailer.Sender, j Job) {
 	start := time.Now()
-	log.Info("job starting", "job", j.Name())
+	logging.Info("job starting", "job", j.Name())
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("job panicked", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "panic", fmt.Sprint(r))
+			logging.Error("job panicked", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "panic", fmt.Sprint(r))
 		}
 	}()
 
 	err := j.Run(ctx)
 	if err != nil {
-		log.Error("job failed", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "error", err)
+		logging.Error("job failed", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds(), "error", err)
 	} else {
-		log.Info("job finished", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds())
+		logging.Info("job finished", "job", j.Name(), "duration_ms", time.Since(start).Milliseconds())
 	}
 
 	sendAlert(m, j)
@@ -105,12 +103,12 @@ func sendAlert(m mailer.Sender, j Job) {
 
 	subject := fmt.Sprintf("homelab-cron: %s alert", j.Name())
 	if err := m.Send(ctx, subject, body); err != nil {
-		log.Error("alert email failed", "job", j.Name(), "error", err)
+		logging.Error("alert email failed", "job", j.Name(), "error", err)
 	}
 }
 
 // cronLogger adapts robfig/cron's own logging to this service's JSON
-// logger — robfig's default writes plain text to stdout. Like robfig's
+// logging — robfig's default writes plain text to stdout. Like robfig's
 // default (non-verbose) logger, it drops Info: those are per-tick
 // "wake"/"run" noise, and RunJob already logs each run.
 type cronLogger struct{}
@@ -118,5 +116,5 @@ type cronLogger struct{}
 func (cronLogger) Info(string, ...any) {}
 
 func (cronLogger) Error(err error, msg string, keysAndValues ...any) {
-	log.Error(msg, append(keysAndValues, "error", err)...)
+	logging.Error(msg, append(keysAndValues, "error", err)...)
 }

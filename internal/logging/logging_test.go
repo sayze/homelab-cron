@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,25 +15,44 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLogger_JSONShape(t *testing.T) {
+// reset points the singleton at a fresh buffer and clears it, so the next
+// Init (explicit or implicit) rebuilds it.
+func reset(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	once, std, out = sync.Once{}, nil, &buf
+	return &buf
+}
+
+func decodeLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var got map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &got))
+		lines = append(lines, got)
+	}
+	return lines
+}
+
+func TestLog_JSONShape(t *testing.T) {
 	tests := []struct {
 		name  string
-		log   func(*Logger)
+		log   func(string, ...any)
 		level string
 	}{
-		{"info", func(l *Logger) { l.Info("hello", "job", "x") }, "INFO"},
-		{"warn", func(l *Logger) { l.Warn("hello", "job", "x") }, "WARN"},
-		{"error", func(l *Logger) { l.Error("hello", "job", "x") }, "ERROR"},
+		{"info", Info, "INFO"},
+		{"warn", Warn, "WARN"},
+		{"error", Error, "ERROR"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			tt.log(newLogger(&buf, "test-component"))
+			buf := reset(t)
+			Init("test-component")
+			tt.log("hello", "job", "x")
 
-			var got map[string]any
-			require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
-
+			got := decodeLines(t, buf)[0]
 			assert.Equal(t, "test-component", got[ComponentKey])
 			assert.Equal(t, "hello", got[MessageKey])
 			assert.Equal(t, tt.level, got["level"])
@@ -47,11 +68,25 @@ func TestLogger_JSONShape(t *testing.T) {
 	}
 }
 
-func TestLogger_ErrorRenderedAsString(t *testing.T) {
-	var buf bytes.Buffer
-	newLogger(&buf, "c").Error("failed", "error", errors.New("boom"))
+func TestLog_ErrorRenderedAsString(t *testing.T) {
+	buf := reset(t)
+	Error("failed", "error", errors.New("boom"))
 
-	var got map[string]any
-	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
-	assert.Equal(t, "boom", got["error"])
+	assert.Equal(t, "boom", decodeLines(t, buf)[0]["error"])
+}
+
+func TestInit_OnlyFirstCallTakesEffect(t *testing.T) {
+	buf := reset(t)
+	Init("first")
+	Init("second")
+	Info("hello")
+
+	assert.Equal(t, "first", decodeLines(t, buf)[0][ComponentKey])
+}
+
+func TestLog_WithoutInitUsesDefaultComponent(t *testing.T) {
+	buf := reset(t)
+	Info("hello")
+
+	assert.Equal(t, defaultComponent, decodeLines(t, buf)[0][ComponentKey])
 }

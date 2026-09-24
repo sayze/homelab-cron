@@ -14,8 +14,6 @@ import (
 	"homelab-cron/internal/logging"
 )
 
-var log = logging.New("postgres")
-
 // closeTimeout bounds how long Ping waits for the connection to close
 // cleanly once the check itself is done.
 const closeTimeout = time.Second
@@ -63,7 +61,7 @@ func (c *PgxClient) Ping(ctx context.Context) error {
 		closeCtx, cancel := context.WithTimeout(context.Background(), closeTimeout)
 		defer cancel()
 		if cerr := conn.Close(closeCtx); cerr != nil {
-			log.Error("closing connection", "error", cerr)
+			logging.Error("closing postgres connection", "error", cerr)
 		}
 	}()
 

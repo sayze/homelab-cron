@@ -27,14 +27,13 @@ import (
 )
 
 func main() {
-	log := logging.New("api")
-	log.CaptureStdlib()
+	logging.Init("api")
 
 	cfg := config.Load()
 
 	m, err := mailer.New(context.Background(), mailer.Config{From: cfg.AlertEmailFrom, To: cfg.AlertEmailTo})
 	if err != nil {
-		log.Error("failed to build mailer", "error", err)
+		logging.Error("failed to build mailer", "error", err)
 		os.Exit(1)
 	}
 
@@ -63,19 +62,19 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Info("homelab-cron api listening", "addr", cfg.Addr)
+		logging.Info("homelab-cron api listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("http server failed", "error", err)
+			logging.Error("http server failed", "error", err)
 			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Info("shutting down")
+	logging.Info("shutting down")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Error("http server shutdown failed", "error", err)
+		logging.Error("http server shutdown failed", "error", err)
 	}
 }

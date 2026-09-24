@@ -14,8 +14,6 @@ import (
 	"homelab-cron/internal/logging"
 )
 
-var log = logging.New("vault")
-
 // maxAttempts and retryDelay bound Version's retries against transient
 // Vault/network failures: up to 3 attempts, 1s apart. retryDelay is a var
 // so tests can shrink it.
@@ -82,7 +80,7 @@ func (c *HTTPClient) version(ctx context.Context) (string, error) {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Error("closing response body", "endpoint", "sys/health", "error", cerr)
+			logging.Error("closing vault response body", "endpoint", "sys/health", "error", cerr)
 		}
 	}()
 

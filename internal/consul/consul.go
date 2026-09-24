@@ -15,8 +15,6 @@ import (
 	"homelab-cron/internal/logging"
 )
 
-var log = logging.New("consul")
-
 // maxAttempts and retryDelay bound Version's retries against transient
 // Consul/network failures: up to 3 attempts, 1s apart. retryDelay is a var
 // so tests can shrink it.
@@ -114,7 +112,7 @@ func (c *HTTPClient) version(ctx context.Context, service string) (string, error
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Error("closing response body", "service", service, "error", cerr)
+			logging.Error("closing consul response body", "service", service, "error", cerr)
 		}
 	}()
 
@@ -160,7 +158,7 @@ func (c *HTTPClient) agentVersion(ctx context.Context) (string, error) {
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			log.Error("closing response body", "endpoint", "agent/self", "error", cerr)
+			logging.Error("closing consul response body", "endpoint", "agent/self", "error", cerr)
 		}
 	}()
 

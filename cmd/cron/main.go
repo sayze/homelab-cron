@@ -27,14 +27,13 @@ import (
 )
 
 func main() {
-	log := logging.New("cron")
-	log.CaptureStdlib()
+	logging.Init("cron")
 
 	cfg := config.Load()
 
 	m, err := mailer.New(context.Background(), mailer.Config{From: cfg.AlertEmailFrom, To: cfg.AlertEmailTo})
 	if err != nil {
-		log.Error("failed to build mailer", "error", err)
+		logging.Error("failed to build mailer", "error", err)
 		os.Exit(1)
 	}
 
@@ -50,17 +49,17 @@ func main() {
 		jobs.NewHealthCheck(postgres.NewPgxClient(cfg.DatabaseURL)),
 	)
 	if err != nil {
-		log.Error("failed to build scheduler", "error", err)
+		logging.Error("failed to build scheduler", "error", err)
 		os.Exit(1)
 	}
 	scheduler.Start()
 	defer scheduler.Stop()
 
-	log.Info("homelab-cron scheduler running")
+	logging.Info("homelab-cron scheduler running")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	<-ctx.Done()
-	log.Info("shutting down")
+	logging.Info("shutting down")
 }

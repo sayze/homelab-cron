@@ -65,18 +65,23 @@ All log output is one JSON object per line, on stdout, so upstream
 (Nomad → Fluent Bit) can parse it consistently. Every line has
 `timestamp` (RFC 3339), `level`, `message`, and `component`, plus
 whatever key/value pairs the call site adds (`"job"`, `"error"`,
-`"duration_ms"`, …). `logging.New(component)` returns a `*logging.Logger` wrapping
-`Info`/`Warn`/`Error(msg string, args ...any)`, backed by the standard
-library's `log/slog` JSON handler (no third-party logging library). Each
-package declares its own package-level logger tagged with its component
-(`consul`, `vault`, `nomad`, `docker`, `postgres`, `mailer`, `scheduler`,
-`http`, and each job's `…JobName`); each `main.go` uses `api`/`cron` and
-calls `CaptureStdlib()` so stray output from dependencies using the
-standard `log` package comes out as JSON too. robfig/cron's own logging
-goes through `cronLogger` in `scheduler.go` (errors only). Don't import
-the standard `log` package — keep the message short and constant, and put
-variable data in key/value args rather than formatting it into the
-message.
+`"duration_ms"`, …). Backed by the standard library's `log/slog` JSON
+handler (no third-party logging library).
+
+There's one process-wide logger, built behind a `sync.Once`: each
+`main.go` calls `logging.Init("api")`/`logging.Init("cron")` once, first
+thing, which sets `component` to that service and also routes stray
+output from dependencies using the standard `log` package through it.
+Every other package just calls the package-level `logging.Info`/`Warn`/
+`Error(msg string, args ...any)` — no per-package logger variables.
+Logging before `Init` (e.g. from unit tests) lazily builds it with
+component `homelab-cron`; only the first `Init` takes effect. Since
+`component` is the service, put which package/job a line came from in the
+message or a field (e.g. `"closing consul response body"`, `"job"`).
+robfig/cron's own logging goes through `cronLogger` in `scheduler.go`
+(errors only). Don't import the standard `log` package — keep the message
+short and constant, and put variable data in key/value args rather than
+formatting it into the message.
 
 ### Cron scheduling (`internal/cron/`)
 
