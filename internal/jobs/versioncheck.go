@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"homelab-cron/internal/consul"
-	"homelab-cron/internal/docker"
-	"homelab-cron/internal/logger"
-	"homelab-cron/internal/nomad"
-	"homelab-cron/internal/vault"
+	"github.com/sayze/homelab-cron/internal/consul"
+	"github.com/sayze/homelab-cron/internal/docker"
+	"github.com/sayze/homelab-cron/internal/logger"
+	"github.com/sayze/homelab-cron/internal/nomad"
+	"github.com/sayze/homelab-cron/internal/vault"
 )
 
 // dependency is one component of the homelab stack this job tracks: its

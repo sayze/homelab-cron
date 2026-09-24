@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"homelab-cron/internal/cron"
-	"homelab-cron/internal/mailer"
+	"github.com/sayze/homelab-cron/internal/cron"
+	"github.com/sayze/homelab-cron/internal/mailer"
 )
 
 // testJob is a minimal cron.Job for exercising the router without a real

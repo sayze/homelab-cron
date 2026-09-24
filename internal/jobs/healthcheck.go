@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"homelab-cron/internal/postgres"
+	"github.com/sayze/homelab-cron/internal/postgres"
 )
 
 // checkTimeout bounds each individual health check, so one hung dependency

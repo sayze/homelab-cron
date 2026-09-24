@@ -7,8 +7,8 @@ import (
 
 	robfigcron "github.com/robfig/cron/v3"
 
-	"homelab-cron/internal/logger"
-	"homelab-cron/internal/mailer"
+	"github.com/sayze/homelab-cron/internal/logger"
+	"github.com/sayze/homelab-cron/internal/mailer"
 )
 
 // alertTimeout bounds how long sending a job's alert email may take. It's
