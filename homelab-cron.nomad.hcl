@@ -65,7 +65,7 @@ job "homelab-cron" {
     # Both run jobs, so they share one definition and differ only by
     # binary.
     dynamic "task" {
-      for_each = ["api", "cron"]
+      for_each = ["homelab-cron-api", "homelab-cron"]
       labels   = [task.value]
 
       content {
