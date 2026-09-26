@@ -10,9 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sayze/homelab-utils/logger"
+
 	"github.com/sayze/homelab-cron/internal/consul"
 	"github.com/sayze/homelab-cron/internal/docker"
-	"github.com/sayze/homelab-cron/internal/logger"
 	"github.com/sayze/homelab-cron/internal/nomad"
 	"github.com/sayze/homelab-cron/internal/vault"
 )

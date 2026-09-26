@@ -3,7 +3,7 @@ package mailer
 import (
 	"context"
 
-	"github.com/sayze/homelab-cron/internal/logger"
+	"github.com/sayze/homelab-utils/logger"
 )
 
 // Noop logs alert emails instead of sending them. Used when SES isn't

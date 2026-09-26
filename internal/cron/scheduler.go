@@ -6,8 +6,8 @@ import (
 	"time"
 
 	robfigcron "github.com/robfig/cron/v3"
+	"github.com/sayze/homelab-utils/logger"
 
-	"github.com/sayze/homelab-cron/internal/logger"
 	"github.com/sayze/homelab-cron/internal/mailer"
 )
 

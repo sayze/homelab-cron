@@ -59,7 +59,10 @@ are simply ignored.
   nothing here is meant to be called by a browser; both routes are only
   reachable on the homelab's internal network (see **Deployment**).
 
-### Logging (`internal/logger/`)
+### Logging (`github.com/sayze/homelab-utils/logger`)
+
+The logger lives in the shared homelab-utils module, not in this repo.
+
 
 All log output is one JSON object per line, on stdout, so upstream
 (Nomad → Fluent Bit) can parse it consistently. Every line has slog's
@@ -76,7 +79,7 @@ output from dependencies using the standard `log` package through it.
 Every other package just calls the package-level `logger.Info`/`Warn`/
 `Error(msg string, args ...any)` — no per-package logger variables.
 Logging before `Init` (e.g. from unit tests) lazily builds it with
-component `homelab-cron`; only the first `Init` takes effect. Since
+component `unknown`; only the first `Init` takes effect. Since
 `component` is the service, put which package/job a line came from in the
 message or a field (e.g. `"closing consul response body"`, `"job"`).
 robfig/cron's own logging goes through `cronLogger` in `scheduler.go`

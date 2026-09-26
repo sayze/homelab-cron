@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sayze/homelab-cron/internal/logger"
+	"github.com/sayze/homelab-utils/logger"
 )
 
 // AptUpgradeCheck verifies that unattended upgrades are actually running by
