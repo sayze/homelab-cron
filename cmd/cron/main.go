@@ -14,12 +14,13 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/sayze/homelab-utils/logger"
+
 	"github.com/sayze/homelab-cron/internal/config"
 	"github.com/sayze/homelab-cron/internal/consul"
 	"github.com/sayze/homelab-cron/internal/cron"
 	"github.com/sayze/homelab-cron/internal/docker"
 	"github.com/sayze/homelab-cron/internal/jobs"
-	"github.com/sayze/homelab-cron/internal/logger"
 	"github.com/sayze/homelab-cron/internal/mailer"
 	"github.com/sayze/homelab-cron/internal/nomad"
 	"github.com/sayze/homelab-cron/internal/postgres"

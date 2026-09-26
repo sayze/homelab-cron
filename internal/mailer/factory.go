@@ -3,7 +3,7 @@ package mailer
 import (
 	"context"
 
-	"github.com/sayze/homelab-cron/internal/logger"
+	"github.com/sayze/homelab-utils/logger"
 )
 
 // Config configures New. It's this package's own small config, not

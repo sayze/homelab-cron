@@ -14,9 +14,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/sayze/homelab-utils/logger"
 
 	"github.com/sayze/homelab-cron/internal/cron"
-	"github.com/sayze/homelab-cron/internal/logger"
 	"github.com/sayze/homelab-cron/internal/mailer"
 )
 

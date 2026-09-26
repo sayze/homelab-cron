@@ -23,4 +23,4 @@ formatters:
     - gofumpt
   settings:
     gofumpt:
-      module-path: homelab-cron
+      module-path: github.com/sayze/homelab-cron

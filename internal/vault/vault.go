@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sayze/homelab-cron/internal/logger"
+	"github.com/sayze/homelab-utils/logger"
 )
 
 // maxAttempts and retryDelay bound Version's retries against transient
