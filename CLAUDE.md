@@ -45,9 +45,9 @@ are simply ignored.
   `ADDR` is read only by `cmd/api` — `cmd/cron` has no HTTP server.
   Deliberately does *not* read AWS credentials/region — those go straight
   to the AWS SDK's own env chain (see `internal/mailer`).
-- `internal/api/api.go` — chi router. Middleware: chi's `RequestID`, then
-  this package's own `requestLogger` and `recoverer` — JSON replacements
-  for chi's `Logger`/`Recoverer`, which write plain text (see **Logging**).
+- `internal/api/api.go` — chi router built on homelab-utils'
+  `router.New()`, which supplies the middleware (request ID, one JSON log
+  line per request, panic → 500) and
   `GET /health` → `200 {"status":"ok"}`. `GET /job/{name}` → looks `name` up in the
   `map[string]cron.Job` given to `New`, runs it via `cron.RunJob` in its
   own goroutine (not waiting for it to finish), and returns `202
