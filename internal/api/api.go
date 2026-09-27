@@ -15,11 +15,8 @@ import (
 	"github.com/sayze/homelab-cron/internal/mailer"
 )
 
-// New builds the chi router on top of homelab-utils' router.New, which
-// supplies GET /health and the request ID, logging and panic middleware.
-// jobs (keyed by Name()) and m back GET /job/{name} — see
-// handleTriggerJob. Both may be nil/empty, in which case every /job/{name}
-// request 404s.
+// New adds GET /job/{name} to router.New. jobs is keyed by Name(); an
+// unknown name 404s.
 func New(jobs map[string]cron.Job, m mailer.Sender) chi.Router {
 	r := router.New()
 
