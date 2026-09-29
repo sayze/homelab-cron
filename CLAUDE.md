@@ -27,8 +27,8 @@ are simply ignored.
   `internal/api.New(jobs, m)` as a `map[string]cron.Job` keyed by each
   job's `Name()` — never to `cron.New(...)`/`cron.Scheduler`, which is
   `cmd/cron`'s alone. Serves it on `cfg.Addr` via homelab-utils'
-  `server.New(...).Run(ctx)`, with `ctx` cancelled on `SIGINT`/`SIGTERM`;
-  `Run` handles graceful shutdown (10s timeout) and logs the server's
+  `server.New(...).RunWithSignals()`, which stops on `SIGINT`/`SIGTERM`;
+  it handles graceful shutdown (10s timeout) and logs the server's
   start/stop/failure itself. A `GET /job/{name}` request runs the matching job directly via
   `cron.RunJob` (see `internal/cron/scheduler.go` below) — `cmd/api` never
   talks to the `cmd/cron` process to do this; it just runs its own copy of
