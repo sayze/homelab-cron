@@ -7,9 +7,7 @@ import (
 	"context"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/sayze/homelab-utils/logger"
@@ -53,12 +51,8 @@ func main() {
 		jobsByName[j.Name()] = j
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-
 	srv := server.New(api.New(jobsByName, m), server.WithAddr(cfg.Addr))
-	err = srv.Run(ctx)
-	stop()
-	if err != nil {
-		os.Exit(1) // Run has already logged err
+	if err := srv.RunWithSignals(); err != nil {
+		os.Exit(1) // RunWithSignals has already logged err
 	}
 }
