@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sayze/homelab-utils/logger"
+	"github.com/sayze/homelab-utils/server"
 
 	"github.com/sayze/homelab-cron/internal/api"
 	"github.com/sayze/homelab-cron/internal/config"
@@ -53,29 +53,12 @@ func main() {
 		jobsByName[j.Name()] = j
 	}
 
-	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           api.New(jobsByName, m),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
-	go func() {
-		logger.Info("homelab-cron api listening", "addr", cfg.Addr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("http server failed", "error", err)
-			os.Exit(1)
-		}
-	}()
-
-	<-ctx.Done()
-	logger.Info("shutting down")
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("http server shutdown failed", "error", err)
+	srv := server.New(api.New(jobsByName, m), server.WithAddr(cfg.Addr))
+	err = srv.Run(ctx)
+	stop()
+	if err != nil {
+		os.Exit(1) // Run has already logged err
 	}
 }

@@ -26,9 +26,10 @@ are simply ignored.
   clients and `internal/jobs` jobs `cmd/cron` does, but only to hand them to
   `internal/api.New(jobs, m)` as a `map[string]cron.Job` keyed by each
   job's `Name()` — never to `cron.New(...)`/`cron.Scheduler`, which is
-  `cmd/cron`'s alone. Starts `http.ListenAndServe` on `cfg.Addr`. On
-  `SIGINT`/`SIGTERM`, shuts the HTTP server down (`srv.Shutdown`, 10s
-  timeout). A `GET /job/{name}` request runs the matching job directly via
+  `cmd/cron`'s alone. Serves it on `cfg.Addr` via homelab-utils'
+  `server.New(...).Run(ctx)`, with `ctx` cancelled on `SIGINT`/`SIGTERM`;
+  `Run` handles graceful shutdown (10s timeout) and logs the server's
+  start/stop/failure itself. A `GET /job/{name}` request runs the matching job directly via
   `cron.RunJob` (see `internal/cron/scheduler.go` below) — `cmd/api` never
   talks to the `cmd/cron` process to do this; it just runs its own copy of
   the job.
