@@ -9,7 +9,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/sayze/homelab-utils v1.1.0
+	github.com/sayze/homelab-utils v1.2.0
 	github.com/stretchr/testify v1.12.1
 )
 
