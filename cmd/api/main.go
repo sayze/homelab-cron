@@ -54,10 +54,11 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	srv := server.New(api.New(jobsByName, m), server.WithAddr(cfg.Addr))
-	if err := srv.Run(ctx); err != nil {
+	err = srv.Run(ctx)
+	stop()
+	if err != nil {
 		os.Exit(1) // Run has already logged err
 	}
 }
